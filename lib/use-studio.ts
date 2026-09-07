@@ -123,6 +123,27 @@ export function useStudio(){
    starting.current=false;running.current=true;setPlaying(true);setNotice('');
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(youtubeActive.current&&e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}
  }
+ function removeVideo(index:number){
+  if((index!==0&&index!==1)||recording)return;
+  pause();
+  const released=[sources[index]?.url];
+  files.current[index]=null;
+  if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);setYoutubeRates([1]);setTime(0);setRateState(1);setLoop({enabled:false,start:0,end:0});}
+  else{
+   optimization.current?.abort();optimization.current=null;setOptimizing(false);setOptimizeProgress(0);setOptimized(false);
+   released.push(originalSelf.current?.url);originalSelf.current=null;restoreTime.current=null;
+   stopCamera();setSelfTime(0);setQuality(null);qualityTick.current={now:0,frames:0};
+  }
+  const media=index===0?reference.current:self.current;
+  if(media){media.pause();media.removeAttribute('src');media.load();}
+  for(const url of released){if(url&&urls.current.delete(url))URL.revokeObjectURL(url);}
+  setSources(v=>v.map((n,i)=>i===index?null:n));setDurations(v=>v.map((n,i)=>i===index?0:n));
+  setBpm(v=>v.map((n,i)=>i===index?120:n));setBpmKinds(v=>v.map((n,i)=>i===index?'unset':n));
+  setOrigins(v=>v.map((n,i)=>i===index?0:n));setMirrors(v=>v.map((n,i)=>i===index?index===1:n));
+  snapshot.current={...snapshot.current,sources:snapshot.current.sources.map((n,i)=>i===index?null:n)};
+  sync.current=resetSync();setDrift(0);lastBeat.current=-999;setAlignment({...defaultAlignment});resetTaps(index);
+  setNotice(`${index===0?'お手本':'自分'}の動画を外しました。別の動画を選べます。元のファイルと履歴は残ります。`);
+ }
  function loadFile(index:number,file:File){
   if(!file.type.startsWith('video/')&&!/\.(mp4|mov|webm|m4v)$/i.test(file.name)){setNotice('動画ファイル（MP4・MOV・WebM）を選んでください。');return;}
   pause();if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);}files.current[index]=file;if(index===1){optimization.current?.abort();originalSelf.current=null;restoreTime.current=null;setOptimized(false);setQuality(null);qualityTick.current={now:0,frames:0};stopCamera();}
@@ -240,5 +261,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,smooth,setSmooth,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,smooth,setSmooth,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }
