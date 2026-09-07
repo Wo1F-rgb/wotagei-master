@@ -1,20 +1,39 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {alignPoses,displayPose,transformPose,jointAngle,perspectivePose,perspectiveMatrix} from '../lib/pose-geometry.ts';
 const stage={width:640,height:480};
-function person(){const p=Array.from({length:33},()=>({x:320,y:240,visibility:1}));p[11]={x:240,y:150,visibility:1};p[12]={x:360,y:150,visibility:1};p[23]={x:260,y:300,visibility:1};p[24]={x:340,y:300,visibility:1};p[13]={x:200,y:220,visibility:1};p[15]={x:230,y:290,visibility:1};return p;}
-test('body registration recovers translation, scale and rotation without warping limbs',()=>{
- const reference=person(),self=transformPose(reference,{x:10,y:-5,scale:.7,rotation:12},stage);
+function person(){const p=Array.from({length:33},()=>({x:320,y:240,visibility:1}));p[0]={x:300,y:70,visibility:1};p[11]={x:240,y:150,visibility:1};p[12]={x:360,y:150,visibility:1};p[23]={x:260,y:260,visibility:1};p[24]={x:340,y:260,visibility:1};p[27]={x:190,y:420,visibility:1};p[28]={x:410,y:420,visibility:1};p[13]={x:200,y:220,visibility:1};p[15]={x:230,y:290,visibility:1};return p;}
+test('standing registration recovers translation and scale without rotating or warping limbs',()=>{
+ const reference=person(),self=transformPose(reference,{x:10,y:-5,scale:.7,rotation:0},stage);
  const fit=alignPoses(reference,self,stage),result=transformPose(self,fit,stage);
  for(const i of [11,12,23,24,13,15]){assert.ok(Math.abs(result[i].x-reference[i].x)<1e-6);assert.ok(Math.abs(result[i].y-reference[i].y)<1e-6);}
  assert.ok(Math.abs(jointAngle(self,11,13,15)-jointAngle(result,11,13,15))<1e-6);
+ assert.equal(fit.rotation,0);
+});
+test('wide stance, shoulder tilt and arm movements never change the camera fit',()=>{
+ const reference=person(),self=person();self[27].x-=80;self[28].x+=80;
+ self[11].y+=50;self[12].y-=50;self[13].x+=150;self[15].y-=130;
+ const fit=alignPoses(reference,self,stage);
+ assert.deepEqual(fit,{x:0,y:0,scale:1,rotation:0});
+});
+test('user-selected rotation is preserved while position and size are fitted',()=>{
+ const reference=person(),self=transformPose(reference,{x:5,y:-3,scale:.8,rotation:10},stage);
+ const fit=alignPoses(reference,self,stage,-10),result=transformPose(self,fit,stage);
+ assert.equal(fit.rotation,-10);
+ for(const i of [0,23,24,27,28]){assert.ok(Math.abs(result[i].x-reference[i].x)<1e-8);assert.ok(Math.abs(result[i].y-reference[i].y)<1e-8);}
+});
+test('bent torso, lifted foot and excessive magnification are rejected rather than overfitted',()=>{
+ const bent=person();bent[0].x+=100;assert.throws(()=>alignPoses(person(),bent,stage),/仁王立ち/);
+ const lifted=person();lifted[27].y-=90;assert.throws(()=>alignPoses(person(),lifted,stage),/仁王立ち/);
+ const tiny=transformPose(person(),{x:0,y:0,scale:.4,rotation:0},stage);assert.throws(()=>alignPoses(person(),tiny,stage),/2倍/);
 });
 test('different aspect ratios and mirroring use the actual contained video rectangle',()=>{
  const points=[{x:.25,y:.5,visibility:1}];
  assert.deepEqual(displayPose(points,{width:1920,height:1080},stage,false)[0],{x:160,y:240,visibility:1});
  assert.deepEqual(displayPose(points,{width:1080,height:1920},stage,true)[0],{x:387.5,y:240,visibility:1});
 });
-test('uncertain or tiny shoulders/hips never produce a misleading alignment',()=>{
+test('uncertain head, hips or feet never produce a misleading alignment',()=>{
  const p=person();p[23].visibility=.2;assert.throws(()=>alignPoses(person(),p,stage));
+ for(const i of [0,27,28]){const missing=person();missing[i].visibility=.2;assert.throws(()=>alignPoses(person(),missing,stage));}
  assert.throws(()=>alignPoses(person(),Array.from({length:33},()=>({x:0,y:0,visibility:1})),stage));
  assert.equal(jointAngle(p,11,23,25),null);
 });
@@ -42,7 +61,7 @@ test('the CSS projective matrix and skeleton calculation agree for mirrors, aspe
 test('body registration preserves a manually calibrated perspective instead of undoing it',()=>{
  const own=person(),perspective={perspectiveX:.14,perspectiveY:-.2},warped=perspectivePose(own,perspective,stage);
  const reference=transformPose(warped,{x:3,y:-4,rotation:8,scale:1.3},stage);
- const fit=alignPoses(reference,warped,stage),result=transformPose(own,{...fit,...perspective},stage);
+ const fit=alignPoses(reference,warped,stage,8),result=transformPose(own,{...fit,...perspective},stage);
  for(const i of [11,12,23,24,13,15]){assert.ok(Math.abs(result[i].x-reference[i].x)<1e-8);assert.ok(Math.abs(result[i].y-reference[i].y)<1e-8);}
  assert.deepEqual(perspectivePose(own,{perspectiveX:0,perspectiveY:0},stage),own);
 });

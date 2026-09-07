@@ -33,6 +33,7 @@ export class YouTubeMedia {
  get currentTime(){return this.player.getCurrentTime() || 0;}
  set currentTime(t: number){this.player.seekTo(Math.max(0,t),true);}
  get duration(){return this.player.getDuration() || 0;}
+ get paused(){return this.player.getPlayerState()!==1;}
  get ended(){return this.player.getPlayerState()===0;}
  get seeking(){return this.player.getPlayerState()===3;}
  get readyState(){return this.seeking ? 2 : 4;}
