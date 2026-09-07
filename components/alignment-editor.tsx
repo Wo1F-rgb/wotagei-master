@@ -15,13 +15,14 @@ const positionFields=[
  {key:'y',label:'上下',min:-100,max:100,step:1,unit:'%'},
  {key:'rotation',label:'画面内の傾き',min:-60,max:60,step:1,unit:'°'},
 ] as const;
-type Props={alignment:Alignment;change:(key:keyof Alignment,value:number)=>void;auto:()=>void;busy:boolean;disabled:boolean;close:()=>void;reset:()=>void;form:ReactNode};
-export function AlignmentEditor({alignment:a,change,auto,busy,disabled,close,reset,form}:Props){
+type Props={background:ReactNode;alignment:Alignment;change:(key:keyof Alignment,value:number)=>void;auto:()=>void;busy:boolean;disabled:boolean;close:()=>void;reset:()=>void;form:ReactNode};
+export function AlignmentEditor({background,alignment:a,change,auto,busy,disabled,close,reset,form}:Props){
  const [tab,setTab]=useState('position');
  return <section className="alignment-editor" aria-label="重ね合わせ調整">
   <header><strong>重ね合わせ調整</strong><button className="button mini" onClick={close}>完了</button></header>
   <Tabs value={tab} onValueChange={v=>setTab(String(v))}>
-   <TabsList aria-label="位置合わせの項目"><TabsTrigger value="camera">遠近</TabsTrigger><TabsTrigger value="position">位置・濃さ</TabsTrigger><TabsTrigger value="form">フォーム差</TabsTrigger></TabsList>
+   <TabsList aria-label="位置合わせの項目"><TabsTrigger value="position">位置・濃さ</TabsTrigger><TabsTrigger value="background">背景</TabsTrigger><TabsTrigger value="camera">遠近</TabsTrigger><TabsTrigger value="form">フォーム差</TabsTrigger></TabsList>
+   <TabsContent value="background" className="alignment-editor-body">{background}</TabsContent>
    <TabsContent value="camera" className="alignment-editor-body">
     <p>遠近は手動で調整します。体の曲がりから自動で遠近や画面の傾きを決めることはありません。</p>
     {cameraFields.map(f=><div className="perspective-control" key={f.key}>

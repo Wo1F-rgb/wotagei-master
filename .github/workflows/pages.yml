@@ -22,6 +22,7 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: node tests/built-worker.mjs
+      - run: node tests/built-background-worker.mjs
       - run: node tests/static-output.mjs
       - uses: actions/upload-pages-artifact@v4
         with:
