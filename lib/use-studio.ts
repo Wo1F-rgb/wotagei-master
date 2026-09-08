@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
-import { clamp, mapSelfTime, synchronizedRate } from './rhythm';
+import { clamp, mapSelfTime, comparisonRates } from './rhythm';
 import { prepareSoloPlayback, restoreComparisonAudio } from './solo';
 import { resetSync, syncAction } from './sync';
 import { restoreTempo, type BpmKind } from './tempo-model';
 import { optimizeVideo } from './optimize-video';
-import { startComparison } from './start-playback';
+import { startComparison, resumeFollower, correctFollower } from './start-playback';
+import {upcomingBeatCues} from './beat-cues';
 import {fitBeatGrid,type BeatGrid} from './beat-grid';
 import {YouTubeMedia,type YouTubeLink} from './youtube';
 import {rememberFile,rememberLink,historyError} from './recent-media';
@@ -23,6 +24,9 @@ export function useStudio(){
  const [bpm,setBpm]=useState([120,120]), [origins,setOrigins]=useState([0,0]), [mirrors,setMirrors]=useState([false,true]);
  const [rate,setRateState]=useState(1), [time,setTime]=useState(0), [selfTime,setSelfTime]=useState(0);
  const [playing,setPlaying]=useState(false), [buffering,setBuffering]=useState(false);
+ const [soundSource,setSoundSource]=useState<0|1>(0),soundChoice=useRef<0|1>(0);
+ const [beatPreview,setBeatPreview]=useState<number|null>(null),previewCue=useRef<number|null>(null);
+ const cueNodes=useRef(new Set<OscillatorNode>()),cueKey=useRef(''),cueLast=useRef(-1),cueTime=useRef<number|null>(null),selfRecovery=useRef(false);
  const [soloPlaying,setSoloPlaying]=useState<number|null>(null), [tapCounts,setTapCounts]=useState([0,0]);
  const [tapRecording,setTapRecording]=useState<number|null>(null),[tapGrids,setTapGrids]=useState<(BeatGrid|null)[]>([null,null]);
  const tapSession=useRef<number|null>(null);
@@ -38,13 +42,13 @@ export function useStudio(){
  const [recordingDownload,setRecordingDownload]=useState<Source|null>(null);
  const stream=useRef<MediaStream|null>(null), cameraRequest=useRef(0), running=useRef(false), playRequest=useRef(0), urls=useRef(new Set<string>());
  const recorder=useRef<MediaRecorder|null>(null);
- const taps=useRef<number[][]>([[],[]]), audio=useRef<AudioContext|null>(null), lastBeat=useRef(-999), lastTick=useRef(0), selfPlayPending=useRef(false);
+ const taps=useRef<number[][]>([[],[]]), audio=useRef<AudioContext|null>(null), lastTick=useRef(0), selfPlayPending=useRef(false);
  const lifecycle=useRef(true),referenceStalled=useRef(false);
- const snapshot=useRef({bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,smooth});
- useEffect(()=>{snapshot.current={bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,smooth};});
+ const snapshot=useRef({bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,smooth,soundSource});
+ useEffect(()=>{snapshot.current={bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,smooth,soundSource};});
  function setRate(value:number){
   if(!Number.isFinite(value)||value<.25||value>2)return;
-  if(youtubeActive.current){pause();const rates=youtube.current?.rates||[1];if(!rates.includes(value)){setNotice('YouTubeで選べる速度のボタンを使ってください。');return;}if(youtube.current)youtube.current.playbackRate=value;}
+  if(youtubeActive.current){pause();const rates=youtube.current?.rates||[1],actual=comparisonRates(value,bpm[0],bpm[1],soundChoice.current).reference;if(!rates.some(n=>Math.abs(n-actual)<.001)){setNotice('YouTubeで選べる速度のボタンを使ってください。');return;}if(youtube.current)youtube.current.playbackRate=rates.find(n=>Math.abs(n-actual)<.001)!;}
   setRateState(value);
  }
  function youtubeMetadata(){const el=youtube.current;if(!el)return;const d=el.duration;if(!running.current&&solo.current===null)setTime(el.currentTime);if(d>0&&Number.isFinite(d)){setDurations(a=>a[0]===d?a:[d,a[1]]);setOrigins(a=>a[0]<=d?a:[d,a[1]]);}const rates=el.rates;setYoutubeRates(a=>a.join()===rates.join()?a:rates.length?rates:[1]);}
@@ -56,7 +60,7 @@ export function useStudio(){
   if(state===2&&!starting.current&&(running.current||solo.current!==null))pause();
   if(state===0&&!starting.current)mediaEnded();
  }
- function youtubeRate(value:number){if(Number.isFinite(value)&&value>0){setRateState(value);youtubeMetadata();}}
+ function youtubeRate(value:number){if(solo.current!==null||previewCue.current!==null)return;if(Number.isFinite(value)&&value>0){setRateState(value*(soundChoice.current===1?snapshot.current.bpm[0]/snapshot.current.bpm[1]:1));youtubeMetadata();}}
  function youtubeError(message:string){pause();setNotice(message);}
  function loadYoutube(link:YouTubeLink){
   void rememberLink(link.url,'youtube','YouTube · '+link.id).catch(e=>{if(lifecycle.current)setNotice(historyError(e));});
@@ -71,47 +75,49 @@ export function useStudio(){
  }
  function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return;if(running.current||tapSession.current!==null)pause();resetTaps(index);setBpm(a=>a.map((n,i)=>i===index?Math.round(value*10)/10:n));setBpmKinds(a=>a.map((n,i)=>i===index?kind:n));}
  function adjustOrigin(index:number,value:number){pause();const c=snapshot.current;const next=c.origins.map((v,i)=>i===index?clamp(value,0,c.durations[index]):v);snapshot.current={...c,origins:next};setOrigins(next);seek(referenceMedia()?.currentTime||0);}
- async function makeLightVideo(){const file=files.current[1];if(!file||camera||optimizing)return;pause();optimization.current?.abort();const task=new AbortController();optimization.current=task;setOptimizing(true);setOptimizeProgress(0);try{const blob=await optimizeVideo(file,task.signal,n=>{if(lifecycle.current&&!task.signal.aborted)setOptimizeProgress(n);});if(!lifecycle.current||task.signal.aborted||files.current[1]!==file||stream.current)return;const url=URL.createObjectURL(blob);urls.current.add(url);originalSelf.current??=sources[1];restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],{...v[1]!,url}]);setOptimized(true);setNotice('自分の動画を軽量版に切り替えました（長辺720px・30fps・音声なし）。BPMとタイミングは維持します。');}catch(e){if(lifecycle.current&&!task.signal.aborted)setNotice(e instanceof Error?e.message:'軽量化できませんでした。');}finally{if(lifecycle.current&&optimization.current===task)setOptimizing(false);}}
+ async function makeLightVideo(){const file=files.current[1];if(!file||camera||optimizing)return;pause();optimization.current?.abort();const task=new AbortController();optimization.current=task;setOptimizing(true);setOptimizeProgress(0);try{const blob=await optimizeVideo(file,task.signal,n=>{if(lifecycle.current&&!task.signal.aborted)setOptimizeProgress(n);});if(!lifecycle.current||task.signal.aborted||files.current[1]!==file||stream.current)return;const url=URL.createObjectURL(blob);urls.current.add(url);originalSelf.current??=sources[1];restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],{...v[1]!,url}]);setOptimized(true);setNotice('自分の動画を軽量版に切り替えました（長辺720px・30fps・元の音声を保持）。BPMとタイミングは維持します。');}catch(e){if(lifecycle.current&&!task.signal.aborted)setNotice(e instanceof Error?e.message:'軽量化できませんでした。');}finally{if(lifecycle.current&&optimization.current===task)setOptimizing(false);}}
  function cancelOptimization(){optimization.current?.abort();}
  function useOriginalVideo(){if(!originalSelf.current)return;pause();restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],originalSelf.current]);setOptimized(false);}
- function pause(){tapSession.current=null;setTapRecording(null);const r=referenceMedia();starting.current=false;referenceStalled.current=false;if(r)setTime(r.currentTime);if(self.current&&!stream.current)setSelfTime(self.current.currentTime);playRequest.current++;running.current=false;solo.current=null;setSoloPlaying(null);referenceMedia()?.pause();if(!stream.current)self.current?.pause();restoreComparisonAudio(referenceMedia(),self.current);setPlaying(false);setBuffering(false);}
- async function playSolo(index:number){
+ function pause(){cancelCues();previewCue.current=null;setBeatPreview(null);selfRecovery.current=false;tapSession.current=null;setTapRecording(null);const r=referenceMedia();starting.current=false;referenceStalled.current=false;if(r)setTime(r.currentTime);if(self.current&&!stream.current)setSelfTime(self.current.currentTime);playRequest.current++;running.current=false;solo.current=null;setSoloPlaying(null);referenceMedia()?.pause();if(!stream.current)self.current?.pause();restoreComparisonAudio(referenceMedia(),self.current,soundChoice.current);setPlaying(false);setBuffering(false);}
+ async function playSolo(index:number,withBeats=false){
   if(optimizing){setNotice('軽量化が終わるか中止してから再生してください。');return;}
   pause();const el=index===0?referenceMedia():self.current;
   if(!el||!sources[index]||(!(index===0&&youtubeActive.current)&&durations[index]<=0)||(index===1&&camera))return;
   const id=++playRequest.current;starting.current=true;
+  if(withBeats){enableAudio();previewCue.current=index;setBeatPreview(index);el.currentTime=clamp(origins[index]-120/bpm[index],0,durations[index]);}
   try{if(el.ended)el.currentTime=0;prepareSoloPlayback(el,index===0?(camera?null:self.current):referenceMedia());await el.play();
-   if(id!==playRequest.current){el.pause();return;}starting.current=false;solo.current=index;setSoloPlaying(index);
+   if(id!==playRequest.current)return;starting.current=false;solo.current=index;setSoloPlaying(index);
   }catch{if(id!==playRequest.current)return;pause();setNotice('この動画を再生できません。もう一度再生を押してください。');}
  }
  function seekSolo(index:number,value:number){pause();const el=index===0?referenceMedia():self.current;if(!el||!sources[index]||(!Number.isFinite(el.duration)||el.duration<=0)||(index===1&&camera))return;el.currentTime=clamp(value,0,el.duration);if(index===0)setTime(el.currentTime);else setSelfTime(el.currentTime);}
  function resetTaps(index:number){taps.current[index]=[];setTapGrids(v=>v.map((n,i)=>i===index?null:n));setTapCounts(v=>v.map((n,i)=>i===index?0:n));}
  function stopCamera(){cameraRequest.current++;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(self.current)self.current.srcObject=null;setCamera(false);setCameraBusy(false);}
  function seek(value:number){
-  if(tapSession.current!==null)pause();
+  cancelCues();if(tapSession.current!==null)pause();
   const r=referenceMedia(),s=self.current,c=snapshot.current;
   if(!r||!c.sources[0]||!Number.isFinite(r.duration)||r.duration<=0)return;
-  sync.current=resetSync(performance.now());const t=clamp(value,0,r.duration);r.currentTime=t;setTime(t);lastBeat.current=-999;
+  sync.current=resetSync(performance.now());const t=clamp(value,0,r.duration);r.currentTime=t;setTime(t);
   if(s&&c.sources[1]&&!c.camera&&c.bpmKinds.every(k=>k!=='unset')&&Number.isFinite(s.duration)){const target=mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]);s.currentTime=clamp(target,0,s.duration);setSelfTime(s.currentTime);}
  }
  async function play(){
   tapSession.current=null;setTapRecording(null);
   const r=referenceMedia();
-  solo.current=null;setSoloPlaying(null);restoreComparisonAudio(r,self.current);
+  solo.current=null;setSoloPlaying(null);restoreComparisonAudio(r,self.current,soundChoice.current);
   if(optimizing){setNotice('軽量化が終わるか中止してから再生してください。');return;}
   if(!r||!sources[0]||(!youtubeActive.current&&durations[0]<=0)){setNotice('先にお手本の動画を読み込んでください。');return;}
-  const sr=synchronizedRate(rate,bpm[0],bpm[1]);
+  const rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current),sr=rates.self;
   if(sources[1]&&!camera&&durations[1]<=0){setNotice('自分の動画の読み込みが終わってから再生してください。');return;}
   if(bpmKinds[0]==='unset'||(sources[1]&&!camera&&bpmKinds[1]==='unset')){setNotice('各動画の「設定 → 拍・BPM」で拍タップ・解析・曲選択・手入力のいずれかを行ってください。');return;}
   sync.current=resetSync(performance.now());
-  if(sources[1]&&!camera&&(sr<.25||sr>4)){setNotice('自分の動画の速度が対応範囲（0.25〜4倍）を超えています。BPMか練習速度を調整してください。');return;}
+  if(rates.reference<.25||rates.reference>4||(sources[1]&&!camera&&(sr<.25||sr>4))){setNotice('動画の速度が対応範囲（0.25〜4倍）を超えています。BPMか練習速度を調整してください。');return;}
+  if(youtubeActive.current&&!youtubeRates.some(n=>Math.abs(n-rates.reference)<.001)){setNotice('このBPMでYouTubeを再生できる速度を「速度」で選んでください。');return;}
   if(loop.enabled&&(loop.end-loop.start<.1)){setNotice('ループの終点は始点より後にしてください。');return;}
   const id=++playRequest.current;starting.current=true;
   if(r.ended||(durations[0]>0&&r.currentTime>=durations[0]-.01))seek(loop.enabled?loop.start:0);
   if(loop.enabled&&(r.currentTime<loop.start||r.currentTime>=loop.end))seek(loop.start);
   try{
-   if(click){audio.current??=new AudioContext();void audio.current.resume();}
-   r.playbackRate=rate;
+   if(click)enableAudio();
+   r.playbackRate=youtubeActive.current?youtubeRates.find(n=>Math.abs(n-rates.reference)<.001)!:rates.reference;
    if(self.current&&sources[1]&&!camera){
     self.current.playbackRate=sr;
     const target=mapSelfTime(r.currentTime,origins[0],origins[1],bpm[0],bpm[1]);
@@ -127,7 +133,7 @@ export function useStudio(){
   if((index!==0&&index!==1)||recording)return;
   pause();
   const released=[sources[index]?.url];
-  files.current[index]=null;
+  files.current[index]=null;if(index===1)resetSound();
   if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);setYoutubeRates([1]);setTime(0);setRateState(1);setLoop({enabled:false,start:0,end:0});}
   else{
    optimization.current?.abort();optimization.current=null;setOptimizing(false);setOptimizeProgress(0);setOptimized(false);
@@ -141,12 +147,12 @@ export function useStudio(){
   setBpm(v=>v.map((n,i)=>i===index?120:n));setBpmKinds(v=>v.map((n,i)=>i===index?'unset':n));
   setOrigins(v=>v.map((n,i)=>i===index?0:n));setMirrors(v=>v.map((n,i)=>i===index?index===1:n));
   snapshot.current={...snapshot.current,sources:snapshot.current.sources.map((n,i)=>i===index?null:n)};
-  sync.current=resetSync();setDrift(0);lastBeat.current=-999;setAlignment({...defaultAlignment});resetTaps(index);
+  sync.current=resetSync();setDrift(0);setAlignment({...defaultAlignment});resetTaps(index);
   setNotice(`${index===0?'お手本':'自分'}の動画を外しました。別の動画を選べます。元のファイルと履歴は残ります。`);
  }
  function loadFile(index:number,file:File){
   if(!file.type.startsWith('video/')&&!/\.(mp4|mov|webm|m4v)$/i.test(file.name)){setNotice('動画ファイル（MP4・MOV・WebM）を選んでください。');return;}
-  pause();if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);}files.current[index]=file;if(index===1){optimization.current?.abort();originalSelf.current=null;restoreTime.current=null;setOptimized(false);setQuality(null);qualityTick.current={now:0,frames:0};stopCamera();}
+  pause();if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);}files.current[index]=file;if(index===1){resetSound();optimization.current?.abort();originalSelf.current=null;restoreTime.current=null;setOptimized(false);setQuality(null);qualityTick.current={now:0,frames:0};stopCamera();}
   const url=URL.createObjectURL(file);urls.current.add(url);
   const key=`${file.name}|${file.size}|${file.lastModified}`;
   const previous=sources[index];if(previous){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}
@@ -165,6 +171,7 @@ export function useStudio(){
   try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i]}));});setNotice('この端末にBPM・「1」の位置・反転設定を保存しました。次回も同じ動画を選ぶと復元されます。');}catch{setNotice('設定を保存できません。ブラウザのストレージ設定をご確認ください。');}
  }
  async function startCamera(){
+  resetSound();
   optimization.current?.abort();
   if(!navigator.mediaDevices?.getUserMedia){setNotice('カメラはHTTPSで開いたSafariなどの対応ブラウザで利用できます。');return;}
   pause();stopCamera();const id=++cameraRequest.current;setCameraBusy(true);
@@ -192,7 +199,7 @@ export function useStudio(){
   const value=Math.round(grid.bpm*1000)/1000;
   const c=snapshot.current,nextBpm=c.bpm.map((n,i)=>i===index?value:n),nextOrigins=c.origins.map((n,i)=>i===index?grid.origin:n),nextKinds=c.bpmKinds.map((n,i)=>i===index?'tap' as BpmKind:n);
   snapshot.current={...c,bpm:nextBpm,origins:nextOrigins,bpmKinds:nextKinds};setBpm(nextBpm);setOrigins(nextOrigins);setBpmKinds(nextKinds);
-  const source=c.sources[index];if(source)try{const saved=JSON.parse(localStorage.getItem('wotagei:video:'+source.key)||'{}');localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({...saved,bpm:value,origin:grid.origin,kind:'tap',mirror:mirrors[index]}));}catch{setNotice('拍は設定しましたが、端末への保存に失敗しました。「保存して戻る」で再試行できます。');}
+
  }
  function markOrigin(index:number){pause();const t=index===0?referenceMedia()?.currentTime:self.current?.currentTime;if(t!==undefined){setOrigins(v=>v.map((n,i)=>i===index?t:n));setNotice(`${index===0?'お手本':'自分'}の「1」を ${t.toFixed(2)} 秒に設定しました。`);}}
  function setSelfPosition(t:number){pause();if(self.current&&!camera){self.current.currentTime=clamp(t,0,durations[1]);setSelfTime(self.current.currentTime);}}
@@ -217,20 +224,45 @@ export function useStudio(){
  }
  function mediaEnded(){if(solo.current!==null){pause();return;}if(loop.enabled&&loop.end>loop.start){seek(loop.start);void play();}else pause();}
  function mediaPlaying(){referenceStalled.current=false;setBuffering(false);}
- function mediaWaiting(){interruptTap(0);if(!running.current)return;referenceStalled.current=true;setBuffering(true);if(!stream.current)self.current?.pause();}
+ function mediaWaiting(index=0){cancelCues();interruptTap(index);if(index===1){if(running.current)selfRecovery.current=true;return;}if(!running.current)return;referenceStalled.current=true;setBuffering(true);if(!stream.current)self.current?.pause();}
  function mediaError(index:number){pause();setNotice(`${index===0?'お手本':'自分'}の動画を開けません。MP4（H.264）でお試しください。`);}
- function changeClick(enabled:boolean){setClick(enabled);if(enabled){try{audio.current??=new AudioContext();void audio.current.resume().catch(()=>setNotice('クリック音を有効にするには、もう一度再生を押してください。'));}catch{setClick(false);setNotice('このブラウザではクリック音を利用できません。');}}}
+ function resetSound(){soundChoice.current=0;setSoundSource(0);snapshot.current={...snapshot.current,soundSource:0};restoreComparisonAudio(referenceMedia(),self.current);}
+ function changeSound(value:0|1){
+  if(value===1&&(!sources[1]||camera)){setNotice('自分の音を使うには、音声付きの動画ファイルを選んでください。');return;}
+  pause();soundChoice.current=value;setSoundSource(value);snapshot.current={...snapshot.current,soundSource:value};restoreComparisonAudio(referenceMedia(),self.current,value);
+  setNotice(`${value===0?'お手本':'自分'}の音・BPMを基準にします。練習速度1倍では選んだ曲のテンポになります。`);
+ }
+ function cancelCues(){for(const node of cueNodes.current){try{node.stop();}catch{}}cueNodes.current.clear();cueKey.current='';cueLast.current=-1;cueTime.current=null;}
+ function enableAudio(){try{audio.current??=new AudioContext();void audio.current.resume().catch(()=>setNotice('拍音を有効にするには、もう一度確認ボタンを押してください。'));}catch{setNotice('このブラウザでは拍音を利用できません。');}}
+ function changeClick(enabled:boolean){setClick(enabled);cancelCues();if(enabled)enableAudio();}
  useEffect(()=>{
-  if(solo.current!==null)return;
-  const r=referenceMedia();if(r)r.playbackRate=rate;
-  const sr=synchronizedRate(rate,bpm[0],bpm[1]);
+  const timer=setInterval(()=>{
+   const c=snapshot.current,index=solo.current!==null?(previewCue.current===solo.current?solo.current:null):(running.current&&c.click?0:null);
+   const el=index===0?referenceMedia():index===1?self.current:null,ac=audio.current;
+   if(index===null||!el||el.paused||el.seeking||el.readyState<3||c.bpmKinds[index]==='unset'||ac?.state!=='running'){cancelCues();return;}
+   const t=el.currentTime,key=`${index}|${c.bpm[index]}|${c.origins[index]}|${el.playbackRate}`;
+   if(cueKey.current!==key||(cueTime.current!==null&&(t<cueTime.current-.01||t-cueTime.current>.3))){cancelCues();cueKey.current=key;}
+   cueTime.current=t;
+   for(const cue of upcomingBeatCues(t,c.origins[index],c.bpm[index],el.playbackRate)){
+    if(cue.index<=cueLast.current)continue;cueLast.current=cue.index;
+    const at=ac.currentTime+cue.delay,o=ac.createOscillator(),g=ac.createGain();o.frequency.value=cue.index%8===0?1200:800;
+    g.gain.setValueAtTime(.12,at);g.gain.exponentialRampToValueAtTime(.001,at+.045);o.connect(g);g.connect(ac.destination);
+    cueNodes.current.add(o);o.onended=()=>{cueNodes.current.delete(o);o.disconnect();g.disconnect();};o.start(at);o.stop(at+.05);
+   }
+  },20);
+  return()=>{clearInterval(timer);cancelCues();};
+ },[]);
+ useEffect(()=>{
+  if(solo.current!==null||starting.current)return;
+  const r=referenceMedia(),rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current);if(r){const actual=youtubeActive.current?youtube.current?.rates.find(n=>Math.abs(n-rates.reference)<.001):rates.reference;if(actual!==undefined)r.playbackRate=actual;}
+  const sr=rates.self;
   if(self.current&&!camera){if(sr>=.25&&sr<=4)self.current.playbackRate=sr;else if(running.current){pause();setNotice('自分の動画の速度が対応範囲を超えたため停止しました。');}}
- },[rate,bpm,camera,smooth]);
+ },[rate,bpm,camera,smooth,soundSource]);
  useEffect(()=>{
   let frame=0;
   const tick=(now:number)=>{
    const r=referenceMedia(),s=self.current,c=snapshot.current;
-   if(solo.current!==null&&now-lastTick.current>100){const el=solo.current===0?r:s;if(el){if(solo.current===0)setTime(el.currentTime);else setSelfTime(el.currentTime);if(el.ended)pause();}lastTick.current=now;}
+   if(solo.current!==null&&now-lastTick.current>32){const el=solo.current===0?r:s;if(el){if(solo.current===0)setTime(el.currentTime);else setSelfTime(el.currentTime);if(el.ended)pause();}lastTick.current=now;}
    if(r&&running.current){
     if(c.loop.enabled&&r.currentTime>=c.loop.end-.012&&(!youtubeActive.current||now-youtubeLoopSeekAt.current>1500)){youtubeLoopSeekAt.current=now;seek(c.loop.start);}
     const t=r.currentTime;
@@ -238,17 +270,14 @@ export function useStudio(){
      const target=mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]);
      if(target<0||target>=s.duration||referenceStalled.current||r.seeking){if(!s.paused)s.pause();if(target<0&&s.currentTime>.01&&!s.seeking)s.currentTime=0;}
      else{
-      const action=syncAction(sync.current,{now,target,current:s.currentTime,baseRate:synchronizedRate(c.rate,c.bpm[0],c.bpm[1]),seeking:s.seeking,ready:s.readyState>=3},c.smooth?'smooth':'precise');
+      const action=syncAction(sync.current,{now,target,current:s.currentTime,baseRate:comparisonRates(c.rate,c.bpm[0],c.bpm[1],c.soundSource).self,seeking:s.seeking,ready:s.readyState>=3},c.smooth?'smooth':'precise');
       if(action.kind!=='hold'){if(Math.abs(s.playbackRate-action.rate)>.001)s.playbackRate=action.rate;if(action.kind==='seek')s.currentTime=action.time;}
-      if(s.paused&&!selfPlayPending.current){selfPlayPending.current=true;void s.play().catch(()=>{running.current=false;r.pause();setPlaying(false);setNotice('自分の動画の再生に失敗しました。動画を選び直してください。');}).finally(()=>{selfPlayPending.current=false;});}
+      const baseRate=comparisonRates(c.rate,c.bpm[0],c.bpm[1],c.soundSource).self;
+      if(selfRecovery.current&&!s.seeking&&s.readyState>=3&&now-sync.current.lastSeek>1000){selfRecovery.current=false;correctFollower(r,s,t=>mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]),baseRate);sync.current=resetSync(now);}
+      if(s.paused&&!selfPlayPending.current){selfPlayPending.current=true;const id=playRequest.current;void resumeFollower(r,s,t=>mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]),baseRate,()=>id===playRequest.current&&running.current).catch(()=>{if(id!==playRequest.current)return;pause();setNotice('自分の動画の再生に失敗しました。動画を選び直してください。');}).finally(()=>{selfPlayPending.current=false;});}
      }
     }
-    const beat=Math.floor((t-c.origins[0])*c.bpm[0]/60+1e-7);
-    if(c.click&&beat>=0&&beat!==lastBeat.current&&r.readyState>=3&&audio.current?.state==='running'){
-     const ac=audio.current,o=ac.createOscillator(),g=ac.createGain();o.frequency.value=beat%8===0?1200:800;g.gain.setValueAtTime(.12,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.045);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.05);
-    }
-    lastBeat.current=beat;
-    if(s&&!c.camera&&now-qualityTick.current.now>=1000){const q=s.getVideoPlaybackQuality?.();setDrift(mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1])-s.currentTime);if(q){const previous=qualityTick.current;setQuality({fps:previous.now?Math.max(0,Math.round((q.totalVideoFrames-q.droppedVideoFrames-previous.frames)*1000/(now-previous.now))):0,dropped:q.droppedVideoFrames});qualityTick.current={now,frames:q.totalVideoFrames-q.droppedVideoFrames};}else qualityTick.current={now,frames:0};}
+    if(s&&!c.camera&&now-qualityTick.current.now>=1000){const q=s.getVideoPlaybackQuality?.();setDrift((mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1])-s.currentTime)/comparisonRates(c.rate,c.bpm[0],c.bpm[1],c.soundSource).self);if(q){const previous=qualityTick.current;setQuality({fps:previous.now?Math.max(0,Math.round((q.totalVideoFrames-q.droppedVideoFrames-previous.frames)*1000/(now-previous.now))):0,dropped:q.droppedVideoFrames});qualityTick.current={now,frames:q.totalVideoFrames-q.droppedVideoFrames};}else qualityTick.current={now,frames:0};}
     if(now-lastTick.current>100){setTime(t);if(s&&!c.camera)setSelfTime(s.currentTime);lastTick.current=now;}
    }
    frame=requestAnimationFrame(tick);
@@ -259,7 +288,7 @@ export function useStudio(){
   lifecycle.current=true;
   const visibility=()=>{if(document.hidden){pause();if(recorder.current?.state==='recording')recorder.current.stop();}};
   document.addEventListener('visibilitychange',visibility);
-  return()=>{optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
+  return()=>{cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,smooth,setSmooth,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,smooth,setSmooth,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }

@@ -20,3 +20,10 @@ test('reference-only preview does not require or pause a live camera',()=>{
  assert.equal(reference.muted,false);
  assert.equal(reference.paused,false);
 });
+
+test('comparison audio selection survives solo preview without sounding both videos',()=>{
+ const reference=video(1,false),self=video(1.25,true);
+ restoreComparisonAudio(reference,self,1);assert.equal(reference.muted,true);assert.equal(self.muted,false);
+ prepareSoloPlayback(reference,self);assert.equal(reference.muted,false);assert.equal(self.muted,true);
+ restoreComparisonAudio(reference,self,1);assert.equal(reference.muted,true);assert.equal(self.muted,false);
+});

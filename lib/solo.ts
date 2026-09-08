@@ -6,7 +6,7 @@ export function prepareSoloPlayback(selected: PreviewMedia, other: PreviewMedia 
   selected.playbackRate = 1;
   selected.muted = false;
 }
-export function restoreComparisonAudio(reference: PreviewMedia | null, self: PreviewMedia | null) {
-  if (reference) reference.muted = false;
-  if (self) self.muted = true;
+export function restoreComparisonAudio(reference: PreviewMedia | null, self: PreviewMedia | null, source:0|1=0) {
+  if (reference) reference.muted = source!==0;
+  if (self) self.muted = source!==1;
 }

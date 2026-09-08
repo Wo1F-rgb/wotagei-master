@@ -9,6 +9,9 @@ export function mapSelfTime(referenceTime: number, referenceOrigin: number, self
 export function synchronizedRate(referenceRate: number, referenceBpm: number, selfBpm: number) {
   return referenceRate * referenceBpm / selfBpm;
 }
+export function comparisonRates(rate:number,referenceBpm:number,selfBpm:number,soundSource:0|1=0){
+  return soundSource===1?{reference:rate*selfBpm/referenceBpm,self:rate}:{reference:rate,self:synchronizedRate(rate,referenceBpm,selfBpm)};
+}
 export function tapTempo(timestamps: number[]) {
   const times=timestamps.slice(-24);
   if(times.length<6)return null;

@@ -1,8 +1,10 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {resetSync,syncAction} from '../lib/sync.ts';
 import {restoreTempo} from '../lib/tempo-model.ts';
-test('smooth playback does not seek or reset playback rate even under persistent drift',()=>{
- const state=resetSync();for(let now=0;now<30000;now+=16)assert.equal(syncAction(state,{now,target:now/1000*1.25,current:now/1000*1.25-1,baseRate:1.25,seeking:false,ready:true},'smooth').kind,'hold');
+test('smooth playback removes persistent drift without repeated seeks',()=>{
+ const state=resetSync();let current=-.1,rate=1.25,seeks=0;
+ for(let now=0;now<20000;now+=16){current+=rate*.016;const action=syncAction(state,{now,target:(now+16)/1000*1.25,current,baseRate:1.25,seeking:false,ready:true},'smooth');if(action.kind==='rate'){rate=action.rate;assert.ok(Math.abs(rate/1.25-1)<=.020001);}if(action.kind==='seek')seeks++;}
+ assert.equal(seeks,0);assert.ok(Math.abs(current-20*1.25)<.05);
 });
 test('a slower 120 BPM self video runs continuously at 1.25x against 150 BPM',()=>{
  const state=resetSync();let current=0,rate=1.25,seeks=0;
