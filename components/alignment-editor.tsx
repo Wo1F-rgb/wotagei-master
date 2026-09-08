@@ -31,12 +31,12 @@ export function AlignmentEditor({background,alignment:a,change,auto,busy,disable
      <small><span>← {f.minus}</span><span>{f.plus} →</span></small>
     </div>)}
    </TabsContent>
-   <TabsContent value="position" className="alignment-editor-body alignment-controls"><p>最初の仁王立ちで止めて実行。頭・腰・両足で位置と大きさだけを合わせ、足の開きや体の傾きには合わせ込みません。</p>
+   <TabsContent value="position" className="alignment-editor-body alignment-controls"><p>体が見える場面で実行。立ち姿勢が違っても、肩・腰・脚から位置と大きさをざっくり合わせます。傾き・遠近は維持し、残ったずれは下で調整できます。</p>
     {positionFields.map(f=><div key={f.key}><label>{f.label}<span>{f.key==='opacity'?Math.round(a[f.key]*100):a[f.key]}{f.unit}</span></label><Slider aria-label={f.label} value={[a[f.key]]} min={f.min} max={f.max} step={f.step} disabled={busy} onValueChange={v=>change(f.key,Array.isArray(v)?v[0]:v)}/></div>)}
     <button className="button" onClick={reset} disabled={busy}>遠近・位置をすべてリセット</button>
    </TabsContent>
    <TabsContent value="form" className="alignment-editor-body">{form}<p>遠近の数値は撮影角度ではなく、見た目を近づける強さです。隠れた手足は復元できません。</p><p>表示は画角補正後、重ねる位置・倍率・手動遠近を適用する前の2D角度差です。残る撮影角度の影響も含むため、フォームの正誤の判定には使いません。</p></TabsContent>
   </Tabs>
-  <footer><button className="button primary wide" disabled={busy||disabled} onClick={auto}>{busy?'骨格を読み取り中…':'仁王立ちで位置・大きさを合わせる'}</button></footer>
+  <footer><button className="button primary wide" disabled={busy||disabled} onClick={auto}>{busy?'骨格を読み取り中…':'今の姿勢でざっくり合わせる'}</button></footer>
  </section>;
 }

@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {alignPoses,displayPose,transformPose,jointAngle,perspectivePose,perspectiveMatrix} from '../lib/pose-geometry.ts';
+import {fitPoses,alignPoses,displayPose,transformPose,jointAngle,perspectivePose,perspectiveMatrix} from '../lib/pose-geometry.ts';
 const stage={width:640,height:480};
 function person(){const p=Array.from({length:33},()=>({x:320,y:240,visibility:1}));p[0]={x:300,y:70,visibility:1};p[11]={x:240,y:150,visibility:1};p[12]={x:360,y:150,visibility:1};p[23]={x:260,y:260,visibility:1};p[24]={x:340,y:260,visibility:1};p[27]={x:190,y:420,visibility:1};p[28]={x:410,y:420,visibility:1};p[13]={x:200,y:220,visibility:1};p[15]={x:230,y:290,visibility:1};return p;}
 test('standing registration recovers translation and scale without rotating or warping limbs',()=>{
@@ -21,21 +21,49 @@ test('user-selected rotation is preserved while position and size are fitted',()
  assert.equal(fit.rotation,-10);
  for(const i of [0,23,24,27,28]){assert.ok(Math.abs(result[i].x-reference[i].x)<1e-8);assert.ok(Math.abs(result[i].y-reference[i].y)<1e-8);}
 });
-test('bent torso, lifted foot and excessive magnification are rejected rather than overfitted',()=>{
- const bent=person();bent[0].x+=100;assert.throws(()=>alignPoses(person(),bent,stage),/仁王立ち/);
- const lifted=person();lifted[27].y-=90;assert.throws(()=>alignPoses(person(),lifted,stage),/仁王立ち/);
- const tiny=transformPose(person(),{x:0,y:0,scale:.4,rotation:0},stage);assert.throws(()=>alignPoses(person(),tiny,stage),/2倍/);
+test('bent torso and lifted foot use a bounded approximate fit instead of a stance error',()=>{
+ for(const change of [p=>{p[0].x+=100;},p=>{p[27].y-=90;}]){
+  const self=person();change(self);const fit=fitPoses(person(),self,stage);
+  assert.equal(fit.approximate,true);assert.equal(fit.alignment.rotation,0);
+  assert.ok(Math.abs(fit.alignment.scale-1)<1e-6);
+  const aligned=transformPose(self,fit.alignment,stage);
+  for(const i of [23,24]){assert.ok(Math.abs(aligned[i].x-person()[i].x)<1e-6);assert.ok(Math.abs(aligned[i].y-person()[i].y)<1e-6);}
+ }
+ const tiny=transformPose(person(),{x:0,y:0,scale:.4,rotation:0},stage),fit=fitPoses(person(),tiny,stage);
+ assert.equal(fit.limited,true);assert.equal(fit.alignment.scale,2);
+});
+test('approximate registration recovers scale and hip location across different joint bends',()=>{
+ const reference=person(),posed=person();posed[0].x+=110;
+ // Rotate one lower leg around its knee without changing the bone length.
+ const dx=posed[27].x-posed[25].x,dy=posed[27].y-posed[25].y;
+ posed[27].x=posed[25].x-dy;posed[27].y=posed[25].y+dx;
+ const self=transformPose(posed,{x:9,y:-7,scale:.75,rotation:12},stage);
+ const fit=fitPoses(reference,self,stage,-12),aligned=transformPose(self,fit.alignment,stage);
+ assert.equal(fit.approximate,true);assert.equal(fit.alignment.rotation,-12);
+ assert.ok(Math.abs(fit.alignment.scale-1/.75)<1e-8);
+ for(const i of [23,24]){assert.ok(Math.abs(aligned[i].x-reference[i].x)<1e-8);assert.ok(Math.abs(aligned[i].y-reference[i].y)<1e-8);}
+ assert.ok(Math.abs(jointAngle(aligned,23,25,27)-jointAngle(self,23,25,27))<1e-8);
 });
 test('different aspect ratios and mirroring use the actual contained video rectangle',()=>{
  const points=[{x:.25,y:.5,visibility:1}];
  assert.deepEqual(displayPose(points,{width:1920,height:1080},stage,false)[0],{x:160,y:240,visibility:1});
  assert.deepEqual(displayPose(points,{width:1080,height:1920},stage,true)[0],{x:387.5,y:240,visibility:1});
 });
-test('uncertain head, hips or feet never produce a misleading alignment',()=>{
- const p=person();p[23].visibility=.2;assert.throws(()=>alignPoses(person(),p,stage));
- for(const i of [0,27,28]){const missing=person();missing[i].visibility=.2;assert.throws(()=>alignPoses(person(),missing,stage));}
- assert.throws(()=>alignPoses(person(),Array.from({length:33},()=>({x:0,y:0,visibility:1})),stage));
- assert.equal(jointAngle(p,11,23,25),null);
+test('partial visibility can use torso landmarks but absent or degenerate bodies still fail',()=>{
+ for(const hidden of [[0],[27,28],[23]]){
+  const p=person();for(const i of hidden)p[i].visibility=.2;
+  const fit=fitPoses(person(),p,stage);assert.equal(fit.approximate,true);
+  assert.ok(Math.abs(fit.alignment.scale-1)<1e-8);
+ }
+ const absent=person().map(p=>({...p,visibility:.1}));assert.throws(()=>alignPoses(person(),absent,stage),/肩か腰/);
+ assert.throws(()=>alignPoses(person(),Array.from({length:33},()=>({x:0,y:0,visibility:1})),stage),/大きさ/);
+ const malformed=person().map(p=>({...p,x:NaN}));assert.throws(()=>alignPoses(person(),malformed,stage));
+ assert.throws(()=>alignPoses(person(),person(),{width:0,height:480}));
+ assert.throws(()=>alignPoses(person(),person(),stage,Infinity));
+});
+test('an occluded limb cannot set the approximate body scale',()=>{
+ const own=person();own[0].x+=110;own[25]={x:1e6,y:-1e6,visibility:.1};
+ const fit=fitPoses(person(),own,stage);assert.equal(fit.approximate,true);assert.ok(Math.abs(fit.alignment.scale-1)<1e-8);
 });
 test('vertical and horizontal perspective change near/far size while the center stays fixed',()=>{
  const points=[{x:320,y:240},{x:220,y:80},{x:420,y:80},{x:220,y:400},{x:420,y:400}];
