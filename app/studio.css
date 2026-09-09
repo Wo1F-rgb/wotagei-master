@@ -62,6 +62,17 @@
 .track-panel-button:not(.always-visible){display:none}
 .start-sync-cover{position:absolute;inset:0;z-index:6;display:grid;place-items:center;background:#0c111b;color:#d3e4bf;font-size:13px;pointer-events:none}.start-sync-cover span{padding:12px;text-align:center}
 .sound-choice{border:0;display:flex;flex-direction:column;gap:8px}.sound-choice legend{font-size:14px;margin-bottom:8px}.sound-choice>div{display:flex;gap:8px}.sound-choice .button{flex:1}.sound-choice button[aria-pressed=true]{border-color:#cdfa69;color:#cdfa69;background:#cdfa6915}
+/* Both stages share the same cell. Keep the iframe mounted and its controls clickable. */
+.has-youtube:not(.editing) .decks.youtube-overlaid{grid-template-rows:30px minmax(200px,1fr)}
+.youtube-overlaid.youtube-controls-visible .deck-1 .video-stage{visibility:hidden}
+.youtube-overlay-toggle{white-space:nowrap;flex-shrink:0;min-height:26px!important;padding:2px 7px!important;font-size:11px!important}
+.youtube-overlay-toggle[aria-pressed=true]{border-color:#cdfa69;color:#cdfa69}
+.alignment-editor.manual-alignment{grid-template-rows:30px minmax(0,1fr)}
+.manual-alignment .alignment-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;align-content:start}
+.manual-alignment .alignment-controls>p{grid-column:1/-1}
+.manual-alignment .alignment-controls label{margin-bottom:7px}
+.manual-alignment .alignment-controls>.button{font-size:12px;padding:4px;min-height:36px}
+@media(min-width:1000px){.has-youtube:not(.editing) .decks.youtube-overlaid{grid-template-rows:36px minmax(200px,1fr)}}
 .beat-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:4px 10px;border-bottom:1px solid #344155;flex-shrink:0;background:#111824}.beat-check svg{width:100%;height:34px;min-width:0}.beat-check .button{min-height:34px;font-size:12px;padding:4px 8px}.beat-check small{grid-column:1/-1;font-size:11px;line-height:1.3;color:#afbed4}
 /* Keep landscape practice focused on full-body video; detailed tracks open on demand. */
 @media(orientation:landscape) and (max-height:500px){
