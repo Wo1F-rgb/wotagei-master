@@ -28,6 +28,6 @@ export function SceneCalibrationEditor({video,saved,preview:showPreview,save}:Pr
  <label className="scene-strength">補正の強さ <span>{Math.round(draft.strength*100)}%</span></label><Slider aria-label="画角補正の強さ" min={0} max={1} step={.05} value={[draft.strength]} onValueChange={v=>setDraft(s=>({...s,strength:Array.isArray(v)?v[0]:v}))}/>
  <div className="scene-actions"><button className="button" disabled={!previewing&&!!error} onClick={()=>setPreviewing(v=>!v)}>{previewing?'元映像で点を調整':'補正を試す'}</button><button className="button primary" disabled={!previewing||!!error} onClick={()=>{save(settings);}}>採用して保存</button><button className="button mini" disabled={!saved} onClick={()=>{setPreviewing(false);save(null);}}>補正を解除</button></div>
  <p className="config-hint" role="status">{error|| (previewing?adopted?'採用済みの補正を表示中です。練習画面でも使えます。':'補正後を表示中。採用するまで練習画面は変わりません。':'元映像を表示中。番号をドラッグしてから「補正を試す」を押してください。')}</p>
- <details><summary>採用後の位置合わせ・基準の選び方</summary><p className="config-hint">採用・解除時は、重ねる位置・倍率・回転・手動遠近をリセットします。その後、仁王立ちで位置を合わせ直してください。人物に近く、人物と平行な壁面を選びます。別の場所の動画は、それぞれの背景で補正します。体の奥行き・隠れた手足・広角レンズの曲がりは復元できません。背景がない動画では従来の手動遠近を使えます。映像内のカメラ移動には追従しません。</p></details>
+ <details><summary>採用後の位置合わせ・基準の選び方</summary><p className="config-hint">採用・解除時は、重ねる位置・倍率・回転・手動遠近をリセットします。その後、動画全体の自動補正か、体が見える場面で位置を合わせ直してください。人物に近く、人物と平行な壁面を選びます。別の場所の動画は、それぞれの背景で補正します。体の奥行き・隠れた手足・広角レンズの曲がりは復元できません。背景がない動画では従来の手動遠近を使えます。映像内のカメラ移動には追従しません。</p></details>
  </div>;
 }

@@ -15,8 +15,8 @@ const positionFields=[
  {key:'y',label:'上下',min:-100,max:100,step:1,unit:'%'},
  {key:'rotation',label:'画面内の傾き',min:-60,max:60,step:1,unit:'°'},
 ] as const;
-type Props={background:ReactNode;alignment:Alignment;change:(key:keyof Alignment,value:number)=>void;auto:()=>void;busy:boolean;disabled:boolean;close:()=>void;reset:()=>void;form:ReactNode};
-export function AlignmentEditor({background,alignment:a,change,auto,busy,disabled,close,reset,form}:Props){
+type Props={background:ReactNode;alignment:Alignment;change:(key:keyof Alignment,value:number)=>void;auto:()=>void;autoSequence:()=>void;sequenceHint:string;busy:boolean;disabled:boolean;close:()=>void;reset:()=>void;form:ReactNode};
+export function AlignmentEditor({background,alignment:a,change,auto,autoSequence,sequenceHint,busy,disabled,close,reset,form}:Props){
  const [tab,setTab]=useState('position');
  return <section className="alignment-editor" aria-label="重ね合わせ調整">
   <header><strong>重ね合わせ調整</strong><button className="button mini" onClick={close}>完了</button></header>
@@ -31,12 +31,12 @@ export function AlignmentEditor({background,alignment:a,change,auto,busy,disable
      <small><span>← {f.minus}</span><span>{f.plus} →</span></small>
     </div>)}
    </TabsContent>
-   <TabsContent value="position" className="alignment-editor-body alignment-controls"><p>体が見える場面で実行。立ち姿勢が違っても、肩・腰・脚から位置と大きさをざっくり合わせます。傾き・遠近は維持し、残ったずれは下で調整できます。</p>
-    {positionFields.map(f=><div key={f.key}><label>{f.label}<span>{f.key==='opacity'?Math.round(a[f.key]*100):a[f.key]}{f.unit}</span></label><Slider aria-label={f.label} value={[a[f.key]]} min={f.min} max={f.max} step={f.step} disabled={busy} onValueChange={v=>change(f.key,Array.isArray(v)?v[0]:v)}/></div>)}
+   <TabsContent value="position" className="alignment-editor-body alignment-controls"><p>{sequenceHint||'「動画全体で自動補正」で対象の人を選ぶと、複数の場面から倍率と位置を合わせます。傾き・遠近は維持します。'}</p>
+    {positionFields.map(f=><div key={f.key}><label>{f.label}<span>{f.key==='opacity'?Math.round(a[f.key]*100):Number(a[f.key].toFixed(3))}{f.unit}</span></label><Slider aria-label={f.label} value={[a[f.key]]} min={f.min} max={f.max} step={f.step} disabled={busy} onValueChange={v=>change(f.key,Array.isArray(v)?v[0]:v)}/></div>)}
     <button className="button" onClick={reset} disabled={busy}>遠近・位置をすべてリセット</button>
    </TabsContent>
    <TabsContent value="form" className="alignment-editor-body">{form}<p>遠近の数値は撮影角度ではなく、見た目を近づける強さです。隠れた手足は復元できません。</p><p>表示は画角補正後、重ねる位置・倍率・手動遠近を適用する前の2D角度差です。残る撮影角度の影響も含むため、フォームの正誤の判定には使いません。</p></TabsContent>
   </Tabs>
-  <footer><button className="button primary wide" disabled={busy||disabled} onClick={auto}>{busy?'骨格を読み取り中…':'今の姿勢でざっくり合わせる'}</button></footer>
+  <footer className="alignment-auto-actions"><button className="button" disabled={busy||disabled} onClick={auto}>{busy?'読み取り中…':'今の1コマで合わせる'}</button><button className="button primary" disabled={busy||disabled||!!sequenceHint} onClick={autoSequence}>動画全体で自動補正</button></footer>
  </section>;
 }
