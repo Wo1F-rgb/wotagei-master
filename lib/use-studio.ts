@@ -10,6 +10,7 @@ import {upcomingBeatCues} from './beat-cues';
 import {fitBeatGrid,type BeatGrid} from './beat-grid';
 import {YouTubeMedia,type YouTubeLink} from './youtube';
 import {resolveYouTubeRate} from './youtube-rate';
+import {nudgeFollower,type NudgeResult} from './manual-timing';
 import {rememberFile,rememberLink,historyError} from './recent-media';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
@@ -19,6 +20,7 @@ export function useStudio(){
  const reference=useRef<HTMLVideoElement>(null), self=useRef<HTMLVideoElement>(null);
  const youtubeLoadSequence=useRef(0),youtubeLoopSeekAt=useRef(-Infinity);
  const youtube=useRef<YouTubeMedia|null>(null), youtubeActive=useRef(false),starting=useRef(false);
+ const youtubeNudge=useRef<{media:YouTubeMedia;masterTime:number;time:number;origin:number}|null>(null);
  const [youtubeReady,setYoutubeReady]=useState(false),[youtubeRates,setYoutubeRates]=useState([1]);
  const referenceMedia=()=>youtubeActive.current?youtube.current:reference.current;
  const [sources,setSources]=useState(initialSources), [durations,setDurations]=useState([0,0]);
@@ -75,11 +77,27 @@ export function useStudio(){
   setNotice('YouTubeを読み込みます。動画内の▶で視聴、BPMと「1」を設定すると下のボタンで同期再生できます。');
  }
  function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return;if(running.current||tapSession.current!==null)pause();resetTaps(index);const c=snapshot.current,next=c.bpm.map((n,i)=>i===index?value:n),kinds=c.bpmKinds.map((n,i)=>i===index?kind:n);snapshot.current={...c,bpm:next,bpmKinds:kinds};setBpm(next);setBpmKinds(kinds);}
- function adjustOrigin(index:number,value:number){pause();const c=snapshot.current;const next=c.origins.map((v,i)=>i===index?clamp(value,0,c.durations[index]):v);snapshot.current={...c,origins:next};setOrigins(next);seek(referenceMedia()?.currentTime||0);}
+ function adjustOrigin(index:number,value:number){pause();const c=snapshot.current,el=index===0?referenceMedia():self.current;if(!el)return;const origin=clamp(value,0,c.durations[index]),t=clamp(el.currentTime+origin-c.origins[index],0,c.durations[index]);const next=c.origins.map((v,i)=>i===index?origin:v);snapshot.current={...c,origins:next};setOrigins(next);el.currentTime=t;if(index===0)setTime(t);else setSelfTime(t);}
+ function nudgeTiming(direction:-1|1):NudgeResult{
+  const c=snapshot.current,index=soundChoice.current===0?1:0;
+  if(starting.current||recording||optimizing||c.camera||c.sources.some(v=>!v)||c.bpmKinds.some(v=>v==='unset'))return {index,delta:0,reason:'2本の動画とBPMを設定してください'};
+  let pendingTime:number|undefined;
+  if(index===0&&youtubeActive.current&&youtube.current&&self.current){
+   // The iframe clock can still report its old position after seekTo(). Project only
+   // when the user taps, so a burst accumulates every 5 ms step without chasing playback.
+   const masterTime=self.current.currentTime,media=youtube.current;
+   if(youtubeNudge.current?.media!==media)youtubeNudge.current={media,masterTime,time:media.currentTime,origin:c.origins[0]};
+   const base=youtubeNudge.current;
+   pendingTime=base.time+(masterTime-base.masterTime)*c.bpm[1]/c.bpm[0]+c.origins[0]-base.origin;
+  }
+  const result=nudgeFollower([referenceMedia(),self.current],c.origins,soundChoice.current,direction,pendingTime);
+  if(result.delta&&result.origin!==undefined){const next=c.origins.map((v,i)=>i===index?result.origin!:v);snapshot.current={...c,origins:next};setOrigins(next);if(index===0)setTime(result.time!);else setSelfTime(result.time!);persistSettings(true);}
+  return result;
+ }
  async function makeLightVideo(){const file=files.current[1];if(!file||camera||optimizing)return;pause();optimization.current?.abort();const task=new AbortController();optimization.current=task;setOptimizing(true);setOptimizeProgress(0);try{const blob=await optimizeVideo(file,task.signal,n=>{if(lifecycle.current&&!task.signal.aborted)setOptimizeProgress(n);});if(!lifecycle.current||task.signal.aborted||files.current[1]!==file||stream.current)return;const url=URL.createObjectURL(blob);urls.current.add(url);originalSelf.current??=sources[1];restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],{...v[1]!,url}]);setOptimized(true);setNotice('自分の動画を軽量版に切り替えました（長辺720px・30fps・元の音声を保持）。BPMとタイミングは維持します。');}catch(e){if(lifecycle.current&&!task.signal.aborted)setNotice(e instanceof Error?e.message:'軽量化できませんでした。');}finally{if(lifecycle.current&&optimization.current===task)setOptimizing(false);}}
  function cancelOptimization(){optimization.current?.abort();}
  function useOriginalVideo(){if(!originalSelf.current)return;pause();restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],originalSelf.current]);setOptimized(false);}
- function pause(){setPreparing(false);cancelCues();previewCue.current=null;setBeatPreview(null);followerBeforeStart.current=false;tapSession.current=null;setTapRecording(null);const r=referenceMedia();starting.current=false;referenceStalled.current=false;if(r)setTime(r.currentTime);if(self.current&&!stream.current)setSelfTime(self.current.currentTime);playRequest.current++;running.current=false;solo.current=null;setSoloPlaying(null);referenceMedia()?.pause();if(!stream.current)self.current?.pause();restoreComparisonAudio(referenceMedia(),self.current,soundChoice.current);setPlaying(false);setBuffering(false);}
+ function pause(){youtubeNudge.current=null;setPreparing(false);cancelCues();previewCue.current=null;setBeatPreview(null);followerBeforeStart.current=false;tapSession.current=null;setTapRecording(null);const r=referenceMedia();starting.current=false;referenceStalled.current=false;if(r)setTime(r.currentTime);if(self.current&&!stream.current)setSelfTime(self.current.currentTime);playRequest.current++;running.current=false;solo.current=null;setSoloPlaying(null);referenceMedia()?.pause();if(!stream.current)self.current?.pause();restoreComparisonAudio(referenceMedia(),self.current,soundChoice.current);setPlaying(false);setBuffering(false);}
  async function playSolo(index:number,withBeats=false){
   if(optimizing){setNotice('軽量化が終わるか中止してから再生してください。');return;}
   pause();const el=index===0?referenceMedia():self.current;
@@ -94,14 +112,14 @@ export function useStudio(){
  function resetTaps(index:number){taps.current[index]=[];setTapGrids(v=>v.map((n,i)=>i===index?null:n));setTapCounts(v=>v.map((n,i)=>i===index?0:n));}
  function stopCamera(){cameraRequest.current++;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(self.current)self.current.srcObject=null;setCamera(false);setCameraBusy(false);}
  function seek(value:number,loopJump=false){
-  cancelCues();if(!loopJump)pause();
+  youtubeNudge.current=null;cancelCues();if(!loopJump)pause();
   const r=referenceMedia(),s=self.current,c=snapshot.current;
   if(!r||!c.sources[0]||!Number.isFinite(r.duration)||r.duration<=0)return;
   const t=clamp(value,0,r.duration);r.currentTime=t;setTime(t);
   if(s&&c.sources[1]&&!c.camera&&c.bpmKinds.every(k=>k!=='unset')&&Number.isFinite(s.duration)){const target=mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]);s.currentTime=clamp(target,0,s.duration);setSelfTime(s.currentTime);if(loopJump){followerBeforeStart.current=target<0||s.paused;if(target<0)s.pause();}}
  }
  async function play(){
-  cancelCues();
+  youtubeNudge.current=null;cancelCues();
   tapSession.current=null;setTapRecording(null);
   const r=referenceMedia(),{bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations}=snapshot.current;
   solo.current=null;setSoloPlaying(null);restoreComparisonAudio(r,self.current,soundChoice.current);
@@ -188,10 +206,11 @@ export function useStudio(){
   void rememberFile(file).catch(e=>{if(lifecycle.current&&files.current[index]===file)setNotice(historyError(e));});
   resetTaps(index);setNotice(restored.kind!=='unset'?'保存済みのBPMと「1」を復元しました。':'BPMは未設定です。横の「設定 → 拍・BPM」から拍タップ・解析・曲選択・手入力ができます。');
  }
- function saveSettings(){
+ function saveSettings(){persistSettings(false);}
+ function persistSettings(quiet:boolean){
   const {sources,bpm,bpmKinds,origins}=snapshot.current;
   if(!sources.some(Boolean)){setNotice('動画を読み込んでから保存してください。');return;}
-  try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i]}));});setNotice('この端末にBPM・「1」の位置・反転設定を保存しました。次回も同じ動画を選ぶと復元されます。');}catch{setNotice('設定を保存できません。ブラウザのストレージ設定をご確認ください。');}
+  try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i]}));});if(!quiet)setNotice('この端末にBPM・「1」の位置・反転設定を保存しました。次回も同じ動画を選ぶと復元されます。');}catch{setNotice('設定を保存できません。ブラウザのストレージ設定をご確認ください。');}
  }
  async function startCamera(){
   resetSound();
@@ -253,7 +272,7 @@ export function useStudio(){
  function changeSound(value:0|1){
   if(value===1&&(!sources[1]||camera)){setNotice('自分の音を使うには、音声付きの動画ファイルを選んでください。');return;}
   pause();soundChoice.current=value;setSoundSource(value);if(youtubeActive.current)setRateState(1);snapshot.current={...snapshot.current,soundSource:value,...(youtubeActive.current?{rate:1}:{})};restoreComparisonAudio(referenceMedia(),self.current,value);
-  setNotice(`${value===0?'お手本':'自分'}の音・BPMを基準にします。練習速度1倍では選んだ曲のテンポになります。`);
+  setNotice('');
  }
  function cancelCues(){for(const node of cueNodes.current){try{node.stop();}catch{}}cueNodes.current.clear();cueKey.current='';cueLast.current=-1;cueTime.current=null;}
  function enableAudio(){try{audio.current??=new AudioContext();void audio.current.resume().catch(()=>setNotice('拍音を有効にするには、もう一度確認ボタンを押してください。'));}catch{setNotice('このブラウザでは拍音を利用できません。');}}
@@ -312,5 +331,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }
