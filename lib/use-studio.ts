@@ -73,7 +73,7 @@ export function useStudio(){
   setTime(link.start);setRateState(1);setDurations(a=>[0,a[1]]);setLoop({enabled:false,start:0,end:0});resetTaps(0);
   setNotice('YouTubeを読み込みます。動画内の▶で視聴、BPMと「1」を設定すると下のボタンで同期再生できます。');
  }
- function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return;if(running.current||tapSession.current!==null)pause();resetTaps(index);setBpm(a=>a.map((n,i)=>i===index?Math.round(value*10)/10:n));setBpmKinds(a=>a.map((n,i)=>i===index?kind:n));}
+ function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return;if(running.current||tapSession.current!==null)pause();resetTaps(index);const c=snapshot.current,next=c.bpm.map((n,i)=>i===index?value:n),kinds=c.bpmKinds.map((n,i)=>i===index?kind:n);snapshot.current={...c,bpm:next,bpmKinds:kinds};setBpm(next);setBpmKinds(kinds);}
  function adjustOrigin(index:number,value:number){pause();const c=snapshot.current;const next=c.origins.map((v,i)=>i===index?clamp(value,0,c.durations[index]):v);snapshot.current={...c,origins:next};setOrigins(next);seek(referenceMedia()?.currentTime||0);}
  async function makeLightVideo(){const file=files.current[1];if(!file||camera||optimizing)return;pause();optimization.current?.abort();const task=new AbortController();optimization.current=task;setOptimizing(true);setOptimizeProgress(0);try{const blob=await optimizeVideo(file,task.signal,n=>{if(lifecycle.current&&!task.signal.aborted)setOptimizeProgress(n);});if(!lifecycle.current||task.signal.aborted||files.current[1]!==file||stream.current)return;const url=URL.createObjectURL(blob);urls.current.add(url);originalSelf.current??=sources[1];restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],{...v[1]!,url}]);setOptimized(true);setNotice('自分の動画を軽量版に切り替えました（長辺720px・30fps・元の音声を保持）。BPMとタイミングは維持します。');}catch(e){if(lifecycle.current&&!task.signal.aborted)setNotice(e instanceof Error?e.message:'軽量化できませんでした。');}finally{if(lifecycle.current&&optimization.current===task)setOptimizing(false);}}
  function cancelOptimization(){optimization.current?.abort();}
@@ -239,7 +239,7 @@ export function useStudio(){
  }
  function mediaEnded(){if(solo.current!==null){pause();return;}if(loop.enabled&&loop.end>loop.start){seek(loop.start);void play();}else pause();}
  function mediaPlaying(){referenceStalled.current=false;setBuffering(false);}
- function mediaWaiting(index=0){cancelCues();interruptTap(index);if(index===0&&running.current){referenceStalled.current=true;setBuffering(true);}}
+ function mediaWaiting(index=0){if(index===(solo.current??soundChoice.current))cancelCues();interruptTap(index);if(index===0&&running.current){referenceStalled.current=true;setBuffering(true);}}
  function mediaError(index:number){pause();setNotice(`${index===0?'お手本':'自分'}の動画を開けません。MP4（H.264）でお試しください。`);}
  function resetSound(){soundChoice.current=0;setSoundSource(0);snapshot.current={...snapshot.current,soundSource:0};restoreComparisonAudio(referenceMedia(),self.current);}
  function changeSound(value:0|1){
@@ -252,7 +252,8 @@ export function useStudio(){
  function changeClick(enabled:boolean){setClick(enabled);cancelCues();if(enabled)enableAudio();}
  useEffect(()=>{
   const timer=setInterval(()=>{
-   const c=snapshot.current,index=solo.current!==null?(previewCue.current===solo.current?solo.current:null):(running.current&&c.click?0:null);
+   // Beat clicks follow the video whose soundtrack is audible, including its actual clock drift.
+   const c=snapshot.current,index=solo.current!==null?(previewCue.current===solo.current?solo.current:null):(running.current&&c.click?c.soundSource:null);
    const el=index===0?referenceMedia():index===1?self.current:null,ac=audio.current;
    if(index===null||!el||el.paused||el.seeking||el.readyState<3||c.bpmKinds[index]==='unset'||ac?.state!=='running'){cancelCues();return;}
    const t=el.currentTime,key=`${index}|${c.bpm[index]}|${c.origins[index]}|${el.playbackRate}`;

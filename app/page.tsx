@@ -74,11 +74,11 @@ export default function Home(){
  const isYoutube=!!s.sources[0]?.youtube;
  const [youtubeControls,setYoutubeControls]=useState(false);
  useEffect(()=>setYoutubeControls(false),[mode,config,s.sources[0]?.key,s.sources[1]?.key,s.camera]);
- const hasReference=isYoutube?s.youtubeReady:!!s.sources[0]&&s.durations[0]>0,beat=beatAt(s.time,s.origins[0],s.bpm[0]);
+ const hasReference=isYoutube?s.youtubeReady:!!s.sources[0]&&s.durations[0]>0,beat=beatAt(s.soundSource===0?s.time:s.selfTime,s.origins[s.soundSource],s.bpm[s.soundSource]);
  const rates=comparisonRates(s.rate,s.bpm[0],s.bpm[1],s.soundSource),selfRate=rates.self,invalidRate=rates.reference<.25||rates.reference>4||(!!s.sources[1]&&!s.camera&&(selfRate<.25||selfRate>4));
  const targetSelf=mapSelfTime(s.time,s.origins[0],s.origins[1],s.bpm[0],s.bpm[1]);
  const missingBpm=s.bpmKinds[0]==='unset'?0:s.sources[1]&&!s.camera&&s.bpmKinds[1]==='unset'?1:null;
- const counted=hasReference&&s.bpmKinds[0]!=='unset';
+ const counted=hasReference&&s.bpmKinds[s.soundSource]!=='unset';
  const overlay=mode==='overlay'&&config===null;
  useLayoutEffect(()=>{
   if(!overlay)return;const r=s.reference.current,v=s.self.current;if(!r?.videoWidth||!v?.videoWidth||stageSize.width<=0||stageSize.height<=0)return;
