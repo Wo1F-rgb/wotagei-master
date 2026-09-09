@@ -50,14 +50,14 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
  }
 }
 /** Local files use a preparation barrier. An embedded player exposes no decoded-frame readiness. */
-export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean){
+export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean,rateReady?:Promise<void>){
  if(!isCurrent())return false;
  const initialTarget=targetSelf(reference.currentTime);
  if(self&&initialTarget>=0&&initialTarget<self.duration&&preparable(reference)&&preparable(self))return startPrepared(reference,self,targetSelf,isCurrent);
  const referenceStart=reference.play();
  const target=targetSelf(reference.currentTime);
  const selfStart=self&&target>=0&&target<self.duration?self.play():Promise.resolve();
- await Promise.all([referenceStart,selfStart]);
+ await Promise.all([referenceStart,selfStart,rateReady]);
  if(!isCurrent())return false;
  if(self)correctFollower(reference,self,targetSelf,selfRate);
  return true;

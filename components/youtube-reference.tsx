@@ -38,7 +38,7 @@ export function YouTubeReference(props:Props){
    player=new API.Player(iframe,{events:{
     onReady:event=>{if(disposed||failed)return;clearTimeout(readyTimer);media=new YouTubeMedia(event.target);callbacks.current.ready(media);callbacks.current.metadata();poll=setInterval(()=>{if(!disposed&&!failed)callbacks.current.metadata();},1000);},
     onStateChange:event=>{if(disposed||failed)return;media?.stateChanged(event.data);callbacks.current.metadata();callbacks.current.state(event.data);},
-    onPlaybackRateChange:event=>{if(!disposed&&!failed)callbacks.current.rate(event.data);},
+    onPlaybackRateChange:event=>{if(!disposed&&!failed){media?.rateChanged(event.data);callbacks.current.rate(event.data);}},
     onError:event=>fail(youtubeError(event.data)),
     onAutoplayBlocked:()=>{const message='動画内の再生ボタンを一度押してから、同期再生を試してください。';media?.cancel(message);callbacks.current.error(message);},
    }});

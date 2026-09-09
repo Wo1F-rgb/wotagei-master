@@ -67,6 +67,23 @@
 .youtube-overlaid.youtube-controls-visible .deck-1 .video-stage{visibility:hidden}
 .youtube-overlay-toggle{white-space:nowrap;flex-shrink:0;min-height:26px!important;padding:2px 7px!important;font-size:11px!important}
 .youtube-overlay-toggle[aria-pressed=true]{border-color:#cdfa69;color:#cdfa69}
+.source-choices{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;width:100%;max-width:360px}
+.source-choices>.button{width:100%;justify-content:center;min-height:36px}
+.source-choices .link-form input{width:0;min-width:0;height:36px;padding:5px 8px}
+.source-choices .link-form .button{min-height:36px;padding:5px 10px}
+.empty-stage{gap:5px}
+.empty-stage .source-choices{max-width:310px;gap:5px}
+.overlaid .deck-1 .source-choices{pointer-events:auto}
+.empty-stage .source-choices>.button,.empty-stage .source-choices .link-form .button{min-height:32px;padding:4px 8px;font-size:13px}
+.empty-stage .source-choices .link-form input{height:32px}
+@media(orientation:portrait){
+ .studio.choosing:not(.editing):not(.aligning){grid-template-rows:42px minmax(0,1fr) 98px}
+ .choosing .practice-dock{grid-template-columns:minmax(0,1fr);grid-template-rows:27px 44px;gap:7px}
+ .choosing .practice-dock>.video-tracks{display:none}
+ .choosing .practice-dock>.count-row{grid-column:1;grid-row:1}
+ .choosing .practice-dock>.transport{grid-column:1;grid-row:2}
+}
+@media(orientation:portrait) and (max-height:740px){.empty-stage>small{display:none}.empty-stage{padding:5px}.empty-stage p{font-size:13px}}
 .alignment-editor.manual-alignment{grid-template-rows:30px minmax(0,1fr)}
 .manual-alignment .alignment-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;align-content:start}
 .manual-alignment .alignment-controls>p{grid-column:1/-1}

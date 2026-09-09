@@ -9,6 +9,7 @@ import { startComparison } from './start-playback';
 import {upcomingBeatCues} from './beat-cues';
 import {fitBeatGrid,type BeatGrid} from './beat-grid';
 import {YouTubeMedia,type YouTubeLink} from './youtube';
+import {resolveYouTubeRate} from './youtube-rate';
 import {rememberFile,rememberLink,historyError} from './recent-media';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
@@ -48,8 +49,8 @@ export function useStudio(){
  useEffect(()=>{snapshot.current={bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,soundSource};});
  function setRate(value:number){
   if(!Number.isFinite(value)||value<.25||value>2)return;
-  if(youtubeActive.current){pause();const rates=youtube.current?.rates||[1],actual=comparisonRates(value,bpm[0],bpm[1],soundChoice.current).reference;if(!rates.some(n=>Math.abs(n-actual)<.001)){setNotice('YouTubeで選べる速度のボタンを使ってください。');return;}if(youtube.current)youtube.current.playbackRate=rates.find(n=>Math.abs(n-actual)<.001)!;}
-  setRateState(value);
+  if(youtubeActive.current)pause();
+  snapshot.current={...snapshot.current,rate:value};setRateState(value);
  }
  function youtubeMetadata(){const el=youtube.current;if(!el)return;const d=el.duration;if(!running.current&&solo.current===null)setTime(el.currentTime);if(d>0&&Number.isFinite(d)){setDurations(a=>a[0]===d?a:[d,a[1]]);setOrigins(a=>a[0]<=d?a:[d,a[1]]);}const rates=el.rates;setYoutubeRates(a=>a.join()===rates.join()?a:rates.length?rates:[1]);}
  function attachYoutube(media:YouTubeMedia|null){youtube.current=media;setYoutubeReady(!!media);if(media){youtubeMetadata();setTime(media.currentTime);} }
@@ -60,7 +61,7 @@ export function useStudio(){
   if(state===2&&!starting.current&&(running.current||solo.current!==null))pause();
   if(state===0&&!starting.current)mediaEnded();
  }
- function youtubeRate(value:number){if(solo.current!==null||previewCue.current!==null)return;if(Number.isFinite(value)&&value>0){setRateState(value*(soundChoice.current===1?snapshot.current.bpm[0]/snapshot.current.bpm[1]:1));youtubeMetadata();}}
+ function youtubeRate(value:number){if(starting.current||solo.current!==null||previewCue.current!==null)return;if(Number.isFinite(value)&&value>0){setRateState(value*(soundChoice.current===1?snapshot.current.bpm[0]/snapshot.current.bpm[1]:1));youtubeMetadata();}}
  function youtubeError(message:string){pause();setNotice(message);}
  function loadYoutube(link:YouTubeLink){
   void rememberLink(link.url,'youtube','YouTube · '+link.id).catch(e=>{if(lifecycle.current)setNotice(historyError(e));});
@@ -109,25 +110,32 @@ export function useStudio(){
   const rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current),sr=rates.self;
   if(sources[1]&&!camera&&durations[1]<=0){setNotice('自分の動画の読み込みが終わってから再生してください。');return;}
   if(bpmKinds[0]==='unset'||(sources[1]&&!camera&&bpmKinds[1]==='unset')){setNotice('各動画の「設定 → 拍・BPM」で拍タップ・解析・曲選択・手入力のいずれかを行ってください。');return;}
-  if(rates.reference<.25||rates.reference>4||(sources[1]&&!camera&&(sr<.25||sr>4))){setNotice('動画の速度が対応範囲（0.25〜4倍）を超えています。BPMか練習速度を調整してください。');return;}
-  if(youtubeActive.current&&!youtubeRates.some(n=>Math.abs(n-rates.reference)<.001)){setNotice('このBPMでYouTubeを再生できる速度を「速度」で選んでください。');return;}
+  if(!youtubeActive.current&&(rates.reference<.25||rates.reference>4||(sources[1]&&!camera&&(sr<.25||sr>4)))){setNotice('動画の速度が対応範囲（0.25〜4倍）を超えています。BPMか練習速度を調整してください。');return;}
   if(loop.enabled&&(loop.end-loop.start<.1)){setNotice('ループの終点は始点より後にしてください。');return;}
   const id=++playRequest.current;starting.current=true;running.current=false;setPreparing(true);
   if(r.ended||(durations[0]>0&&r.currentTime>=durations[0]-.01))seek(loop.enabled?loop.start:origins[0],true);
   if(loop.enabled&&(r.currentTime<loop.start||r.currentTime>=loop.end))seek(loop.start,true);
   try{
    if(click)enableAudio();
-   r.playbackRate=youtubeActive.current?youtubeRates.find(n=>Math.abs(n-rates.reference)<.001)!:rates.reference;
+   if(!youtubeActive.current)r.playbackRate=rates.reference;
    if(self.current&&sources[1]&&!camera){
-    self.current.playbackRate=sr;
+    self.current.playbackRate=clamp(sr,.25,4);
     const target=mapSelfTime(r.currentTime,origins[0],origins[1],bpm[0],bpm[1]);
     followerBeforeStart.current=target<0;
     self.current.currentTime=clamp(target,0,durations[1]);
 
    }
-   const started=await startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current);
+   let speedNotice='';
+   // Start both players in the original gesture while verifying the YouTube rate in parallel.
+   const rateReady=youtubeActive.current&&youtube.current?resolveYouTubeRate(youtube.current,bpm[0],bpm[1],soundChoice.current,rate,()=>id===playRequest.current).then(chosen=>{
+    if(!chosen||id!==playRequest.current)return;
+    snapshot.current={...snapshot.current,rate:chosen.rate};setRateState(chosen.rate);
+    if(self.current&&sources[1]&&!camera)self.current.playbackRate=chosen.self;
+    if(chosen.fallback)speedNotice=`このYouTubeで使える速度に合わせ、練習速度を${Number(chosen.rate.toFixed(4))}倍にしました。`;
+   }):undefined;
+   const started=await startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current,rateReady);
    if(!started)return;
-   starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice('');
+   starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice);
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}
  }
  function applyFirstBeats(next:number[],save=false){
@@ -244,7 +252,7 @@ export function useStudio(){
  function resetSound(){soundChoice.current=0;setSoundSource(0);snapshot.current={...snapshot.current,soundSource:0};restoreComparisonAudio(referenceMedia(),self.current);}
  function changeSound(value:0|1){
   if(value===1&&(!sources[1]||camera)){setNotice('自分の音を使うには、音声付きの動画ファイルを選んでください。');return;}
-  pause();soundChoice.current=value;setSoundSource(value);snapshot.current={...snapshot.current,soundSource:value};restoreComparisonAudio(referenceMedia(),self.current,value);
+  pause();soundChoice.current=value;setSoundSource(value);if(youtubeActive.current)setRateState(1);snapshot.current={...snapshot.current,soundSource:value,...(youtubeActive.current?{rate:1}:{})};restoreComparisonAudio(referenceMedia(),self.current,value);
   setNotice(`${value===0?'お手本':'自分'}の音・BPMを基準にします。練習速度1倍では選んだ曲のテンポになります。`);
  }
  function cancelCues(){for(const node of cueNodes.current){try{node.stop();}catch{}}cueNodes.current.clear();cueKey.current='';cueLast.current=-1;cueTime.current=null;}
@@ -270,7 +278,7 @@ export function useStudio(){
  },[]);
  useEffect(()=>{
   if(solo.current!==null||starting.current)return;
-  const r=referenceMedia(),rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current);if(r){const actual=youtubeActive.current?youtube.current?.rates.find(n=>Math.abs(n-rates.reference)<.001):rates.reference;if(actual!==undefined)r.playbackRate=actual;}
+  const r=referenceMedia(),rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current);if(r&&!youtubeActive.current)r.playbackRate=rates.reference;
   const sr=rates.self;
   if(self.current&&!camera){if(sr>=.25&&sr<=4)self.current.playbackRate=sr;else if(running.current){pause();setNotice('自分の動画の速度が対応範囲を超えたため停止しました。');}}
  },[rate,bpm,camera,soundSource]);

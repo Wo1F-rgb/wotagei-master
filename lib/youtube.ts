@@ -29,7 +29,9 @@ export interface YouTubePlayer {
 export class YouTubeMedia {
  private pending: {resolve:()=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>} | null = null;
  player: YouTubePlayer;
- constructor(player: YouTubePlayer) {this.player=player;}
+ confirmedPlaybackRate:number;
+ constructor(player: YouTubePlayer) {this.player=player;this.confirmedPlaybackRate=player.getPlaybackRate()||1;}
+ rateChanged(value:number){if(Number.isFinite(value)&&value>0)this.confirmedPlaybackRate=value;}
  get currentTime(){return this.player.getCurrentTime() || 0;}
  set currentTime(t: number){this.player.seekTo(Math.max(0,t),true);}
  get duration(){return this.player.getDuration() || 0;}
