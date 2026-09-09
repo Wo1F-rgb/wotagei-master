@@ -260,7 +260,7 @@ export function useStudio(){
    cueTime.current=t;
    for(const cue of upcomingBeatCues(t,c.origins[index],c.bpm[index],el.playbackRate)){
     if(cue.index<=cueLast.current)continue;cueLast.current=cue.index;
-    const at=ac.currentTime+cue.delay,o=ac.createOscillator(),g=ac.createGain();o.frequency.value=cue.index%8===0?1200:800;
+    const at=ac.currentTime+cue.delay,o=ac.createOscillator(),g=ac.createGain();o.frequency.value=cue.index%4===0?1200:800;
     g.gain.setValueAtTime(.12,at);g.gain.exponentialRampToValueAtTime(.001,at+.045);o.connect(g);g.connect(ac.destination);
     cueNodes.current.add(o);o.onended=()=>{cueNodes.current.delete(o);o.disconnect();g.disconnect();};o.start(at);o.stop(at+.05);
    }

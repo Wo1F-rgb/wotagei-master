@@ -8,6 +8,6 @@ export function BeatPreview({time,origin,bpm,playing,disabled,toggle}:Props){
    <path d="M0 30H240" stroke="#61718b"/>{!disabled&&Array.from({length:9},(_,i)=>first+i).filter(n=>n>=0).map(n=><g key={n}><line x1={x(n)} x2={x(n)} y1="3" y2="32" stroke="white" strokeWidth={n%8===0?2:1} opacity={n%8===0?1:.65}/><text x={x(n)+3} y="15" fill="white" fontSize="11">{n%8+1}</text></g>)}<path d="M120 0V38" stroke="#ff6f87" strokeWidth="2"/>
   </svg>
   <button className="button" disabled={disabled} onClick={toggle}>{playing?'確認を止める':'拍音で確認'}</button>
-  <small>白線で拍音・「1」は高い音。確認後「保存して戻る」。</small>
+  <small>白線で拍音・「1」「5」は高い音。確認後「保存して戻る」。</small>
  </div>;
 }
