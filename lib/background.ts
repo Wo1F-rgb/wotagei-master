@@ -24,3 +24,8 @@ export function removeGreen(rgba:Uint8ClampedArray,strength:number){
  return rgba;
 }
 export function containRect(sw:number,sh:number,width:number,height:number){const scale=Math.min(width/sw,height/sh);return {x:(width-sw*scale)/2,y:(height-sh*scale)/2,width:sw*scale,height:sh*scale};}
+/** Allow one source frame of quantization plus 80 ms of processing, never a beat-old picture. */
+export function cutoutIsCurrent(frameTime:number,currentTime:number,rate:number){
+ if(![frameTime,currentTime,rate].every(Number.isFinite)||rate<=0)return false;
+ const lag=currentTime-frameTime;return lag>=-.04&&lag<=.04+.08*rate;
+}

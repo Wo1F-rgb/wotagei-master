@@ -50,3 +50,12 @@ test('cancellation during a pending play does not rewind or mute replacement med
  assert.equal(await result,false);release();await delay(5);
  assert.equal(r.currentTime,9);assert.equal(s.currentTime,11);assert.equal(r.muted,false);assert.equal(s.muted,true);
 });
+
+test('recovering a running pair waits for slow seeks instead of leaving another follower lag',async()=>{
+ const r=new Decoder([5,5],10),s=new Decoder([5,5],400);s.muted=true;s.playbackRate=1.25;
+ await Promise.all([r.play(),s.play()]);s.value-=.5;
+ assert.equal(await startComparison(r,s,t=>t*1.25,1.25,()=>true),true);
+ assert.ok(Math.abs(r.currentTime-s.currentTime/1.25)<.025);
+ assert.ok(r.seeks.every(seek=>seek.paused&&seek.muted));assert.ok(s.seeks.every(seek=>seek.paused&&seek.muted));
+ r.pause();s.pause();
+});

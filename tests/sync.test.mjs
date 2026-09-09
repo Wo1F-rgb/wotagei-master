@@ -28,3 +28,21 @@ test('unmeasured default and legacy values cannot masquerade as detected BPM',()
  assert.deepEqual(restoreTempo({bpm:150,kind:'analysis'}),{bpm:150,kind:'analysis'});
  assert.deepEqual(restoreTempo({bpm:120,kind:'manual'}),{bpm:120,kind:'manual'});
 });
+
+test('smooth mode recovers a persistent one-beat lag once instead of taking 20 seconds at 2%',()=>{
+ for(const baseRate of [.5,1,1.25,2])for(const sign of [-1,1]){
+  const state=resetSync();let current=-sign*.4*baseRate,rate=baseRate,seeks=0;
+  for(let now=0;now<5000;now+=10){
+   current+=rate*.01;const action=syncAction(state,{now,target:(now+10)/1000*baseRate,current,baseRate,seeking:false,ready:true},'smooth');
+   if(action.kind==='rate')rate=action.rate;
+   if(action.kind==='seek'){assert.ok(now<=2000);current=action.time;rate=action.rate;seeks++;}
+  }
+  assert.equal(seeks,1);assert.ok(Math.abs(current/baseRate-5)<.03);
+ }
+});
+
+test('a brief clock jump does not trigger a recovery and bad readings cannot change playback',()=>{
+ const state=resetSync();
+ for(let now=0;now<3000;now+=50){const drift=now>=800&&now<1100?.4:0;assert.notEqual(syncAction(state,{now,target:3+drift,current:3,baseRate:1,seeking:false,ready:true},'smooth').kind,'seek');}
+ assert.equal(syncAction(resetSync(),{now:2000,target:NaN,current:3,baseRate:1,seeking:false,ready:true}).kind,'hold');
+});

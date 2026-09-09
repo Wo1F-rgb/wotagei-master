@@ -1,18 +1,19 @@
 'use client';
 import {useEffect,useRef,type RefObject,type CSSProperties} from 'react';
 import {publicAsset} from '@/lib/public-assets';
-import {containRect,type BackgroundSettings} from '@/lib/background';
+import {containRect,cutoutIsCurrent,type BackgroundSettings} from '@/lib/background';
 type Props={video:RefObject<HTMLVideoElement|null>;settings:BackgroundSettings;style:CSSProperties;source:string;active:boolean;status:(ready:boolean,message?:string)=>void};
 export function BackgroundVideo({video,settings,style,source,active,status}:Props){
  const canvas=useRef<HTMLCanvasElement>(null),current=useRef({settings,status});current.current={settings,status};
  useEffect(()=>{
   const el=video.current,surface=canvas.current;
   if(!active||settings.mode==='off'||!el||!surface)return;
-  let disposed=false,worker:Worker|null=null,ready=false,busy=false,epoch=0,lastTime=-1,lastThreshold=-1,lastSent=0,raf=0,bitmap:ImageBitmap|null=null;
+  let disposed=false,worker:Worker|null=null,ready=false,busy=false,epoch=0,lastTime=-1,lastThreshold=-1,lastSent=0,raf=0,bitmap:ImageBitmap|null=null,bitmapTime=NaN;
   let watchdog:ReturnType<typeof setTimeout>|undefined;
   const ctx=surface.getContext('2d');
   const clear=()=>{bitmap?.close();bitmap=null;ctx?.clearRect(0,0,surface.width,surface.height);current.current.status(false);};
   const fail=(message:string)=>{if(disposed)return;ready=false;worker?.terminate();worker=null;clearTimeout(watchdog);clear();current.current.status(false,message);};
+  const behind=()=>fail('背景処理が再生に追いつかないため、元の映像に戻しました。背景をOFF→ONにすると再試行できます。');
   const draw=()=>{
    if(!ctx||!bitmap)return;
    const width=Math.max(1,Math.round(surface.clientWidth)),height=Math.max(1,Math.round(surface.clientHeight));
@@ -22,13 +23,14 @@ export function BackgroundVideo({video,settings,style,source,active,status}:Prop
   const invalidate=()=>{epoch++;lastTime=-1;clear();};
   const tick=(now:number)=>{
    if(disposed)return;
+   if(bitmap&&!el.seeking&&!cutoutIsCurrent(bitmapTime,el.currentTime,el.playbackRate))behind();
    if(ready&&!busy&&!document.hidden&&!el.seeking&&el.readyState>=2&&el.videoWidth&&now-lastSent>=33&&(lastTime!==el.currentTime||lastThreshold!==current.current.settings.threshold)){
-    busy=true;lastSent=now;lastTime=el.currentTime;lastThreshold=current.current.settings.threshold;const sentEpoch=epoch;
+    busy=true;lastSent=now;lastTime=el.currentTime;lastThreshold=current.current.settings.threshold;const sentEpoch=epoch,mediaTime=el.currentTime;
     const ratio=Math.min(1,640/Math.max(el.videoWidth,el.videoHeight));
     void createImageBitmap(el,{resizeWidth:Math.max(1,Math.round(el.videoWidth*ratio)),resizeHeight:Math.max(1,Math.round(el.videoHeight*ratio))}).then(frame=>{
      if(disposed||!worker||sentEpoch!==epoch){frame.close();busy=false;return;}
      watchdog=setTimeout(()=>fail('背景処理が止まったため元の映像に戻しました。背景をOFFにしてから再度ONにできます。'),10000);
-     worker.postMessage({type:'frame',frame,epoch:sentEpoch,timestamp:now,threshold:current.current.settings.threshold},[frame]);
+     worker.postMessage({type:'frame',frame,epoch:sentEpoch,mediaTime,timestamp:now,threshold:current.current.settings.threshold},[frame]);
     }).catch(()=>{busy=false;fail('動画の画像を取得できませんでした。元の映像を表示しています。');});
    }
    raf=requestAnimationFrame(tick);
@@ -47,8 +49,9 @@ export function BackgroundVideo({video,settings,style,source,active,status}:Prop
     if(e.data.type==='ready'){ready=true;return;}
     if(e.data.type==='frame'){
      busy=false;
-     if(e.data.epoch!==epoch){e.data.bitmap.close();return;}
-     bitmap?.close();bitmap=e.data.bitmap;draw();current.current.status(true);
+     if(e.data.epoch!==epoch||!worker){e.data.bitmap.close();return;}
+     if(!cutoutIsCurrent(e.data.mediaTime,el.currentTime,el.playbackRate)){e.data.bitmap.close();behind();return;}
+     bitmap?.close();bitmap=e.data.bitmap;bitmapTime=e.data.mediaTime;draw();current.current.status(true);
     }
    };
    watchdog=setTimeout(()=>fail('背景モデルの読み込みに時間がかかっています。通信を確認して背景をONにし直してください。'),45000);

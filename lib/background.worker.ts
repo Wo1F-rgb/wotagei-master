@@ -36,7 +36,7 @@ self.onmessage=async(e:MessageEvent)=>{
   }else{
    const pixels=ctx.getImageData(0,0,output.width,output.height);removeGreen(pixels.data,data.threshold);ctx.putImageData(pixels,0,0);
   }
-  const bitmap=output.transferToImageBitmap();send({type:'frame',bitmap,epoch:data.epoch},[bitmap]);
+  const bitmap=output.transferToImageBitmap();send({type:'frame',bitmap,epoch:data.epoch,mediaTime:data.mediaTime},[bitmap]);
  }catch{send({type:'error',message:'この動画の背景を処理できませんでした。元の映像を表示しています。'});}
  finally{frame.close();}
 };

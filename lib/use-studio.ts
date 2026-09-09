@@ -44,6 +44,7 @@ export function useStudio(){
  const recorder=useRef<MediaRecorder|null>(null);
  const taps=useRef<number[][]>([[],[]]), audio=useRef<AudioContext|null>(null), lastTick=useRef(0), selfPlayPending=useRef(false);
  const lifecycle=useRef(true),referenceStalled=useRef(false);
+ const latestPlay=useRef<()=>Promise<void>>(async()=>{});
  const snapshot=useRef({bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,smooth,soundSource});
  useEffect(()=>{snapshot.current={bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,smooth,soundSource};});
  function setRate(value:number){
@@ -100,6 +101,7 @@ export function useStudio(){
   if(s&&c.sources[1]&&!c.camera&&c.bpmKinds.every(k=>k!=='unset')&&Number.isFinite(s.duration)){const target=mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]);s.currentTime=clamp(target,0,s.duration);setSelfTime(s.currentTime);}
  }
  async function play(){
+  cancelCues();
   tapSession.current=null;setTapRecording(null);
   const r=referenceMedia();
   solo.current=null;setSoloPlaying(null);restoreComparisonAudio(r,self.current,soundChoice.current);
@@ -129,6 +131,10 @@ export function useStudio(){
    starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice('');
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}
  }
+ latestPlay.current=play;
+ // Reuse the two-decoder preparation barrier after a seek/stall. Seeking only the
+ // follower while the reference keeps playing leaves another decoder-sized delay.
+ function restartLocalComparison(){pause();void latestPlay.current();}
  function removeVideo(index:number){
   if((index!==0&&index!==1)||recording)return;
   pause();
@@ -271,9 +277,14 @@ export function useStudio(){
      if(target<0||target>=s.duration||referenceStalled.current||r.seeking){if(!s.paused)s.pause();if(target<0&&s.currentTime>.01&&!s.seeking)s.currentTime=0;}
      else{
       const action=syncAction(sync.current,{now,target,current:s.currentTime,baseRate:comparisonRates(c.rate,c.bpm[0],c.bpm[1],c.soundSource).self,seeking:s.seeking,ready:s.readyState>=3},c.smooth?'smooth':'precise');
+      if(action.kind==='seek'&&!youtubeActive.current){restartLocalComparison();frame=requestAnimationFrame(tick);return;}
       if(action.kind!=='hold'){if(Math.abs(s.playbackRate-action.rate)>.001)s.playbackRate=action.rate;if(action.kind==='seek')s.currentTime=action.time;}
       const baseRate=comparisonRates(c.rate,c.bpm[0],c.bpm[1],c.soundSource).self;
-      if(selfRecovery.current&&!s.seeking&&s.readyState>=3&&now-sync.current.lastSeek>1000){selfRecovery.current=false;correctFollower(r,s,t=>mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]),baseRate);sync.current=resetSync(now);}
+      if(selfRecovery.current&&!s.seeking&&s.readyState>=3&&now-sync.current.lastSeek>1000){
+       if(!youtubeActive.current){restartLocalComparison();frame=requestAnimationFrame(tick);return;}
+       selfRecovery.current=false;correctFollower(r,s,t=>mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]),baseRate);sync.current=resetSync(now);
+      }
+      if(s.paused&&!youtubeActive.current){restartLocalComparison();frame=requestAnimationFrame(tick);return;}
       if(s.paused&&!selfPlayPending.current){selfPlayPending.current=true;const id=playRequest.current;void resumeFollower(r,s,t=>mapSelfTime(t,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]),baseRate,()=>id===playRequest.current&&running.current).catch(()=>{if(id!==playRequest.current)return;pause();setNotice('自分の動画の再生に失敗しました。動画を選び直してください。');}).finally(()=>{selfPlayPending.current=false;});}
      }
     }

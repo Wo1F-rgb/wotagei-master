@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {maskAlpha,removeGreen,restoreBackground,containRect} from '../lib/background.ts';
+import {maskAlpha,removeGreen,restoreBackground,containRect,cutoutIsCurrent} from '../lib/background.ts';
 test('person mask removes background, retains subject and feathers uncertain edges',()=>{
  const rgba=maskAlpha(new Float32Array([0,.1,.5,.9,1,NaN]),.5);
  assert.deepEqual([rgba[3],rgba[7],rgba[15],rgba[19],rgba[23]],[0,0,255,255,0]);assert.ok(rgba[11]>=127&&rgba[11]<=128);
@@ -24,4 +24,14 @@ test('saved background preferences reject invalid modes and clamp numeric values
  assert.deepEqual(restoreBackground(null),{mode:'off',threshold:.5,preview:'green'});
  assert.deepEqual(restoreBackground({mode:'person',threshold:4,preview:'transparent'}),{mode:'person',threshold:.9,preview:'transparent'});
  assert.deepEqual(restoreBackground({mode:'unknown',threshold:NaN}),{mode:'off',threshold:.5,preview:'green'});
+});
+
+test('a late cutout cannot replace current video even when the media clocks agree',()=>{
+ for(const rate of [.25,.5,1,1.25,2,4]){
+  assert.equal(cutoutIsCurrent(5,5+.03+.04*rate,rate),true);
+  assert.equal(cutoutIsCurrent(5,5+.4*rate,rate),false);
+  assert.equal(cutoutIsCurrent(5,4.8,rate),false);
+ }
+ assert.equal(cutoutIsCurrent(5,5,1),true); // Paused picture remains valid indefinitely.
+ assert.equal(cutoutIsCurrent(NaN,5,1),false);
 });

@@ -13,7 +13,7 @@ const messages=[],context={self:{postMessage(value,options){messages.push({value
 vm.runInNewContext(await readFile(new URL(files[0],folder),'utf8'),context,{timeout:10000});
 await context.self.onmessage({data:{type:'init',mode:'green'}});assert.equal(messages.at(-1).value.type,'ready');
 let closed=0;const frame={width:2,height:1,pixels:[0,255,0,255,190,130,100,255],close(){closed++;}};
-await context.self.onmessage({data:{type:'frame',frame,epoch:7,timestamp:10,threshold:.5}});
-const {value,options}=messages.at(-1);assert.equal(value.type,'frame');assert.equal(value.epoch,7);assert.equal(value.bitmap.pixels[3],0);assert.equal(value.bitmap.pixels[7],255);assert.equal(options.transfer[0],value.bitmap);assert.equal(closed,1);
+await context.self.onmessage({data:{type:'frame',frame,epoch:7,mediaTime:4.2,timestamp:10,threshold:.5}});
+const {value,options}=messages.at(-1);assert.equal(value.type,'frame');assert.equal(value.epoch,7);assert.equal(value.mediaTime,4.2);assert.equal(value.bitmap.pixels[3],0);assert.equal(value.bitmap.pixels[7],255);assert.equal(options.transfer[0],value.bitmap);assert.equal(closed,1);
 await context.self.onmessage({data:{type:'frame',frame:{...frame,broken:true},epoch:8,threshold:.5}});assert.equal(messages.at(-1).value.type,'error');assert.equal(closed,2);
 console.log('Built background worker: chroma alpha, transferred bitmap, frame epoch and error cleanup verified. AI inference requires device verification.');
