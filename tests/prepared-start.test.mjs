@@ -28,19 +28,19 @@ test('cold decoders prepare silently, wait for both seeks and start on the origi
  assert.ok(r.currentTime<2.08);assert.equal(r.muted,false);assert.equal(s.muted,true);
  r.pause();s.pause();
 });
-test('a slow first launch is retried silently instead of seeking an audible video',async()=>{
+test('a slow first launch is allowed to continue without automatic rewind/retry',async()=>{
  const r=new Decoder([5,5,5]),s=new Decoder([5,130,5]);r.muted=true;s.muted=false;
  assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);
- assert.equal(r.calls,3);assert.equal(s.calls,3);
+ assert.equal(r.calls,2);assert.equal(s.calls,2);assert.equal(r.seeks.length,1);assert.equal(s.seeks.length,1);
  assert.ok(r.seeks.every(seek=>seek.muted&&seek.paused));assert.ok(s.seeks.every(seek=>seek.muted&&seek.paused));
  assert.equal(r.muted,true);assert.equal(s.muted,false);
- assert.ok(Math.abs(r.currentTime-s.currentTime)<=.025);r.pause();s.pause();
+ r.pause();s.pause();
 });
-test('permanent decoder skew stops at the original position after bounded attempts',async()=>{
+test('decoder clock skew never triggers repeated startup attempts or a forced stop',async()=>{
  const r=new Decoder([5,5]),s=new Decoder([5,120]);s.muted=true;
- await assert.rejects(startComparison(r,s,t=>t,1,()=>true),/開始時のずれ/);
- assert.equal(r.calls,4);assert.equal(s.calls,4);assert.equal(r.paused,true);assert.equal(s.paused,true);
- assert.equal(r.currentTime,2);assert.equal(s.currentTime,2);assert.equal(r.muted,false);assert.equal(s.muted,true);
+ assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);
+ assert.equal(r.calls,2);assert.equal(s.calls,2);assert.equal(r.paused,false);assert.equal(s.paused,false);
+ assert.equal(r.seeks[0].value,2);assert.equal(s.seeks[0].value,2);assert.equal(r.muted,false);assert.equal(s.muted,true);r.pause();s.pause();
 });
 test('cancellation during a pending play does not rewind or mute replacement media',async()=>{
  let current=true,release;
@@ -51,11 +51,18 @@ test('cancellation during a pending play does not rewind or mute replacement med
  assert.equal(r.currentTime,9);assert.equal(s.currentTime,11);assert.equal(r.muted,false);assert.equal(s.muted,true);
 });
 
-test('recovering a running pair waits for slow seeks instead of leaving another follower lag',async()=>{
+test('an explicitly requested restart waits for both slow seeks once',async()=>{
  const r=new Decoder([5,5],10),s=new Decoder([5,5],400);s.muted=true;s.playbackRate=1.25;
  await Promise.all([r.play(),s.play()]);s.value-=.5;
  assert.equal(await startComparison(r,s,t=>t*1.25,1.25,()=>true),true);
  assert.ok(Math.abs(r.currentTime-s.currentTime/1.25)<.025);
  assert.ok(r.seeks.every(seek=>seek.paused&&seek.muted));assert.ok(s.seeks.every(seek=>seek.paused&&seek.muted));
  r.pause();s.pause();
+});
+
+test('a paused decoder with the requested frame ready does not wait for future buffering',async()=>{
+ const r=new Decoder(),s=new Decoder();s.muted=true;
+ for(const media of [r,s])Object.defineProperty(media,'readyState',{get:()=>2,set:()=>{}});
+ assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);
+ assert.equal(r.calls,2);assert.equal(s.calls,2);assert.equal(s.seeks.length,1);r.pause();s.pause();
 });
