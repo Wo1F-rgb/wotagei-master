@@ -28,11 +28,24 @@ test('cold decoders prepare silently, wait for both seeks and start on the origi
  assert.ok(r.currentTime<2.08);assert.equal(r.muted,false);assert.equal(s.muted,true);
  r.pause();s.pause();
 });
-test('a slow first launch is allowed to continue without automatic rewind/retry',async()=>{
+
+test('a half-second second-launch delay is corrected once against either chosen soundtrack',async()=>{
+ for(const master of [0,1]){
+  const r=new Decoder([5,5]),s=new Decoder([5,505]);s.playbackRate=1.25;
+  const target=t=>3+(t-2)*1.25,reverse=t=>2+(t-3)/1.25;
+  assert.equal(await startComparison(r,s,target,1.25,()=>true,undefined,master===1?reverse:undefined),true);
+  assert.ok(Math.abs(s.currentTime-target(r.currentTime))/1.25<.035,'the first played beat must align without changing display mode');
+  const audible=master===0?r:s,follower=master===0?s:r;
+  assert.equal(audible.seeks.length,1,'no audible-clock correction after preparation');
+  assert.equal(follower.seeks.length,2,'one preparation seek and one startup correction');
+  assert.equal(r.calls,2);assert.equal(s.calls,2);r.pause();s.pause();
+ }
+});
+test('a slow second launch receives one follower correction without rewind/retry',async()=>{
  const r=new Decoder([5,5,5]),s=new Decoder([5,130,5]);r.muted=true;s.muted=false;
  assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);
- assert.equal(r.calls,2);assert.equal(s.calls,2);assert.equal(r.seeks.length,1);assert.equal(s.seeks.length,1);
- assert.ok(r.seeks.every(seek=>seek.muted&&seek.paused));assert.ok(s.seeks.every(seek=>seek.muted&&seek.paused));
+ assert.equal(r.calls,2);assert.equal(s.calls,2);assert.equal(r.seeks.length,1);assert.equal(s.seeks.length,2);
+ assert.ok(r.seeks.every(seek=>seek.muted&&seek.paused));assert.ok(s.seeks[0].muted&&s.seeks[0].paused);assert.equal(s.seeks[1].paused,false);
  assert.equal(r.muted,true);assert.equal(s.muted,false);
  r.pause();s.pause();
 });

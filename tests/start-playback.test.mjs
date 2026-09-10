@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {startComparison} from '../lib/start-playback.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {startComparison,startDelayedFollower} from '../lib/start-playback.ts';
 test('unequal decoder startup delays are corrected once after both play promises resolve',async()=>{
  let value=0,seeks=0;const reference={currentTime:0,duration:20,async play(){await Promise.resolve();this.currentTime=.4;}};
  const self={duration:20,async play(){value=.05;},get currentTime(){return value;},set currentTime(t){value=t;seeks++;}};
@@ -24,4 +24,15 @@ test('live practice starts only the reference without warmup pauses or synchroni
  assert.deepEqual(events,[]);
  assert.equal(await startComparison(reference,null,t=>t,.5,()=>true),true);
  assert.deepEqual(events,['play']);assert.equal(reference.currentTime,4);assert.equal(reference.playbackRate,.5);assert.equal(reference.muted,false);
+});
+
+test('a follower entering after pre-roll corrects its own launch latency once',async()=>{
+ let value=0;const seeks=[],reference={currentTime:2,duration:20,async play(){assert.fail('reference must keep playing');}};
+ const self={duration:20,playbackRate:1.25,get currentTime(){return value;},set currentTime(t){value=t;seeks.push(t);},async play(){reference.currentTime=2.5;value=.01;}};
+ assert.equal(await startDelayedFollower(reference,self,t=>(t-2)*1.25,1.25,()=>true),true);
+ assert.deepEqual(seeks,[.625]);assert.equal(value,.625);
+});
+test('canceling a delayed follower never seeks a replacement video',async()=>{
+ let current=true,resolve;const ref={currentTime:2,duration:20,async play(){}},self={currentTime:0,duration:20,play:()=>new Promise(r=>resolve=r)};
+ const work=startDelayedFollower(ref,self,t=>t-2,1,()=>current);current=false;assert.equal(await work,false);self.currentTime=9;resolve();await Promise.resolve();assert.equal(self.currentTime,9);
 });

@@ -267,6 +267,11 @@
 }
 
 .motion-layer{position:absolute;inset:0;transform-origin:center;will-change:transform;backface-visibility:hidden}
+.track-grid-adjust{position:absolute;inset:0;width:100%;height:100%;z-index:4;border:0;padding:0;background:transparent;cursor:ew-resize;touch-action:none}
+.track-grid-adjust:disabled{opacity:1;cursor:default}
+.track-grid-adjust:focus-visible{outline:2px solid #fff;outline-offset:-2px}
+.track-ruler>.track-clip{pointer-events:none}
+.track-nudge-feedback{max-width:100%;white-space:normal;text-align:right;line-height:1.3}
 .camera-recording-frame{position:absolute;box-shadow:inset 0 0 0 1px #b8a1ff65;pointer-events:none;z-index:4}
 .camera-format-settings{display:flex;flex-direction:column;gap:7px}
 .camera-format-settings select{min-width:0;max-width:60%;background:#172131;color:#e8eafa;border:1px solid #485b73;border-radius:6px;padding:7px;font-size:16px}

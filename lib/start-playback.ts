@@ -1,4 +1,4 @@
-type Media={currentTime:number;duration:number;play:()=>Promise<void>};
+type Media={currentTime:number;duration:number;playbackRate?:number;play:()=>Promise<void>};
 type PreparedMedia=Media&{pause:()=>void;muted:boolean;readyState:number;seeking:boolean;playbackRate:number;addEventListener:unknown};
 const preparable=(media:Media):media is PreparedMedia=>typeof (media as PreparedMedia).pause==='function'&&typeof (media as PreparedMedia).addEventListener==='function';
 class CanceledStart extends Error{}
@@ -26,7 +26,7 @@ function waitReady(media:PreparedMedia,target:number,isCurrent:()=>boolean):Prom
  });
 }
 /** Prepare the requested positions once. Do not retry/rewind to chase clock differences. */
-async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean){
+async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean,targetReference?: (t:number)=>number){
  const start=reference.currentTime,ownStart=targetSelf(start),muted=[reference.muted,self.muted];
  let accepted=false;
  reference.pause();self.pause();reference.muted=true;self.muted=true;
@@ -40,6 +40,9 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
   if(!isCurrent())throw new CanceledStart();
   await waitCurrent(Promise.all([reference.play(),self.play()]),isCurrent);
   if(!isCurrent())throw new CanceledStart();
+  // Ready frames do not guarantee equal play() startup latency. Correct the
+  // silent player once, before revealing the sound, without restarting either.
+  correctFollower(reference,self,targetSelf,self.playbackRate,targetReference);
   accepted=true;return true;
  }catch(error){if(error instanceof CanceledStart)return false;throw error;}
  finally{
@@ -50,19 +53,27 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
  }
 }
 /** Local files use a preparation barrier. An embedded player exposes no decoded-frame readiness. */
-export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean,rateReady?:Promise<void>){
+export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean,rateReady?:Promise<void>,targetReference?: (t:number)=>number){
  if(!isCurrent())return false;
  const initialTarget=targetSelf(reference.currentTime);
- if(self&&initialTarget>=0&&initialTarget<self.duration&&preparable(reference)&&preparable(self))return startPrepared(reference,self,targetSelf,isCurrent);
+ if(self&&initialTarget>=0&&initialTarget<self.duration&&preparable(reference)&&preparable(self))return startPrepared(reference,self,targetSelf,isCurrent,targetReference);
  const referenceStart=reference.play();
- const target=targetSelf(reference.currentTime);
+ const target=targetReference&&self?self.currentTime:targetSelf(reference.currentTime);
  const selfStart=self&&target>=0&&target<self.duration?self.play():Promise.resolve();
  await Promise.all([referenceStart,selfStart,rateReady]);
  if(!isCurrent())return false;
- if(self)correctFollower(reference,self,targetSelf,selfRate);
+ if(self)correctFollower(reference,self,targetSelf,selfRate,targetReference);
  return true;
 }
-export function correctFollower(reference:Media,self:Media,targetSelf:(t:number)=>number,selfRate:number){
- const target=targetSelf(reference.currentTime);
- if(target>=0&&target<self.duration&&Math.abs(target-self.currentTime)>selfRate*.025)self.currentTime=target;
+export function correctFollower(reference:Media,self:Media,targetSelf:(t:number)=>number,selfRate:number,targetReference?: (t:number)=>number){
+ const follower=targetReference?reference:self,target=targetReference?targetReference(self.currentTime):targetSelf(reference.currentTime);
+ const rate=follower.playbackRate??selfRate;
+ if(target>=0&&target<follower.duration&&Math.abs(target-follower.currentTime)>rate*.025)follower.currentTime=target;
+}
+
+/** A clip starting after pre-roll has its own cold-start delay, handled once too. */
+export async function startDelayedFollower(reference:Media,self:Media,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean){
+ if(!isCurrent())return false;
+ try{await waitCurrent(self.play(),isCurrent);if(!isCurrent())return false;correctFollower(reference,self,targetSelf,selfRate);return true;}
+ catch(error){if(error instanceof CanceledStart)return false;throw error;}
 }
