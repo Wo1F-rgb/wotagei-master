@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {fitPoseSequence,samplingPlan,selectSubject,subjectFromPose,resizeRegistration} from '../lib/pose-registration.ts';
+import {fitPoseSequence,samplingPlan,selectSubject,subjectFromPose,visiblePose,resizeRegistration} from '../lib/pose-registration.ts';
 import {displayPose,transformPose,jointAngle} from '../lib/pose-geometry.ts';
 const stage={width:960,height:540};
 function person(phase=0){
@@ -19,12 +19,30 @@ test('a few misdetected sizes do not become the scale, and invisible feet do not
  const fit=fitPoseSequence([...good,...bad],stage);assert.equal(fit.frames,12);assert.ok(Math.abs(fit.alignment.scale-1/.9)<1e-8);
  const aligned=transformPose(good[0].self,fit.alignment,stage);assert.ok(Math.hypot(aligned[23].x-person()[23].x,aligned[23].y-person()[23].y)<1e-7);
 });
-test('insufficient, shoulder-only, nonfinite, and extreme corrections are rejected instead of adopted',()=>{
- const pair={reference:person(),self:person()};assert.throws(()=>fitPoseSequence(Array(5).fill(pair),stage));
- const noTorso=person();noTorso[11].visibility=.1;noTorso[12].visibility=.1;assert.throws(()=>fitPoseSequence(Array(8).fill({...pair,self:noTorso}),stage));
- const huge=transformPose(person(),{x:0,y:0,scale:.25,rotation:0},stage);assert.throws(()=>fitPoseSequence(Array(8).fill({...pair,self:huge}),stage),/倍率/);
- const invalid=person();invalid[23].x=NaN;assert.throws(()=>fitPoseSequence(Array(8).fill({...pair,self:invalid}),stage));
+test('unmeasurable or extreme size keeps the existing scale; no common visible anchor still fails',()=>{
+ const pair={reference:person(),self:person()};
+ const noTorso=person();noTorso[11].visibility=.1;noTorso[12].visibility=.1;
+ const result=fitPoseSequence(Array(8).fill({...pair,self:noTorso}),stage,0,1.37);assert.equal(result.positionOnly,true);assert.equal(result.alignment.scale,1.37);
+ const aligned=transformPose(noTorso,result.alignment,stage);assert.ok(Math.abs((aligned[23].x+aligned[24].x)/2-480)<1e-8);
+ const huge=transformPose(person(),{x:0,y:0,scale:.25,rotation:0},stage),extreme=fitPoseSequence(Array(8).fill({...pair,self:huge}),stage);assert.equal(extreme.positionOnly,true);assert.equal(extreme.alignment.scale,1);
+ const invalid=person().map(p=>({...p,x:NaN}));assert.throws(()=>fitPoseSequence(Array(8).fill({...pair,self:invalid}),stage),/共通/);
+ assert.throws(()=>fitPoseSequence([],stage),/共通/);
  assert.throws(()=>fitPoseSequence(Array(8).fill(pair),{width:0,height:540}));
+ assert.throws(()=>fitPoseSequence([pair],stage,0,NaN));
+});
+const only=(points,ids)=>points.map((p,i)=>({...p,visibility:ids.includes(i)?p.visibility:0}));
+test('one usable scene and one-sided or upper-body crops align without demanding six full torsos',()=>{
+ for(const ids of [[0,11,12,23,24],[11,23],[11,12]])for(const count of [1,3,12]){
+  const reference=only(person(),ids),self=transformPose(reference,{x:8,y:-7,scale:.8,rotation:12},stage);
+  const fit=fitPoseSequence(Array(count).fill({reference,self}),stage,-12);
+  assert.equal(fit.frames,count);assert.equal(fit.limited,true);assert.equal(fit.positionOnly,false);assert.ok(Math.abs(fit.alignment.scale-1.25)<1e-8);
+  const aligned=transformPose(self,fit.alignment,stage);for(const i of ids)assert.ok(Math.hypot(aligned[i].x-reference[i].x,aligned[i].y-reference[i].y)<1e-7);
+ }
+});
+test('a shared hip alone supplies translation without inventing size or camera tilt',()=>{
+ const reference=only(person(),[23]),self=only(transformPose(person(),{x:5,y:2,scale:.85,rotation:0},stage),[23]);
+ const fit=fitPoseSequence([{reference,self}],stage,7,1.2);assert.equal(fit.positionOnly,true);assert.equal(fit.alignment.scale,1.2);assert.equal(fit.alignment.rotation,7);
+ const aligned=transformPose(self,fit.alignment,stage);assert.ok(Math.hypot(aligned[23].x-reference[23].x,aligned[23].y-reference[23].y)<1e-7);
 });
 const normalized=(p=person())=>p.map(v=>({...v,x:v.x/960,y:v.y/540}));
 test('a missing dancer never falls back to a spectator, even if only one pose remains',()=>{
@@ -35,11 +53,29 @@ test('a missing dancer never falls back to a spectator, even if only one pose re
  const bent=main.map(p=>({...p}));bent[0].x+=.12;bent[27].x-=.06;bent[28].x+=.06;assert.equal(selectSubject([bent],seed),bent);
  assert.equal(subjectFromPose([]),null);
 });
+test('subject selection uses corresponding visible joints when hips or feet leave the frame',()=>{
+ const full=normalized(),seed=subjectFromPose(full);assert.ok(seed);
+ for(const ids of [[0,11,12],[11,23],[23,24]]){
+  const cropped=only(full,ids);assert.ok(subjectFromPose(cropped));assert.equal(selectSubject([cropped],seed),cropped);
+  const croppedSeed=subjectFromPose(cropped);assert.equal(selectSubject([full],croppedSeed),full);
+  const spectator=cropped.map(p=>({...p,x:p.x-.4}));assert.equal(selectSubject([spectator],seed),null);
+  const ambiguous=cropped.map(p=>({...p,x:p.x+.005}));assert.equal(selectSubject([cropped,ambiguous],seed),null);
+ }
+ const hallucinated=only(full,[11,12,23,24]);for(const i of [23,24])hallucinated[i].y=1.2;
+ const clean=visiblePose(hallucinated);assert.equal(clean[23].visibility,0);assert.equal(selectSubject([hallucinated],seed),hallucinated);
+ const nothing=full.map(p=>({...p,x:1.2}));assert.equal(subjectFromPose(nothing),null);
+ assert.equal(selectSubject([only(full,[0,11])],seed),null);
+});
 test('sampling uses beat-mapped overlap, includes late sections, and never clamps an unavailable self frame',()=>{
  const times=samplingPlan([30,20],[2,.5],[150,120]);assert.equal(times.length,32);
  for(const [r,s] of times){assert.ok(r>0&&r<30&&s>0&&s<20);assert.ok(Math.abs(s-(.5+(r-2)*1.25))<1e-10);}
  assert.ok(times.at(-1)[1]>19);assert.ok(times[0][0]>1.6);
  assert.throws(()=>samplingPlan([1,1],[0,2],[120,120]),/区間/);assert.throws(()=>samplingPlan([30,20],[0,0],[0,120]));
+});
+test('sampling includes the chosen scene with its beat-mapped partner, without changing tempo or clamping',()=>{
+ const times=samplingPlan([30,20],[2,.5],[150,120],32,8.123),chosen=times.find(([r])=>r===8.123);assert.ok(chosen);assert.ok(Math.abs(chosen[1]-(.5+(8.123-2)*1.25))<1e-10);assert.equal(times.length,32);
+ assert.ok(times.every(([r],i)=>i===0||r>times[i-1][0]));
+ assert.deepEqual(samplingPlan([30,20],[2,.5],[150,120],32,0),samplingPlan([30,20],[2,.5],[150,120]));
 });
 test('portrait, landscape and panel resizing retain the same alignment in video coordinates',()=>{
  const before={width:556,height:784},refSize={width:1278,height:720},ownSizes=[{width:1280,height:720},{width:720,height:1280}];

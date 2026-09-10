@@ -1,6 +1,6 @@
 import {publicAsset} from './public-assets';
 import {displayPose,perspectivePose,transformPose,type Point,type Size,type PoseAlignment} from './pose-geometry';
-import {fitPoseSequence,samplingPlan,selectSubject,subjectFromPose,type PosePair,type Subject} from './pose-registration';
+import {fitPoseSequence,samplingPlan,selectSubject,subjectFromPose,visiblePose,type PosePair,type Subject} from './pose-registration';
 import {projectPoint,sceneMatrix,type SceneCalibration} from './scene-calibration';
 import {motionSamplingPlan,type MotionAnalysis,type MotionSample} from './motion-alignment';
 
@@ -55,8 +55,8 @@ export async function preparePoseAnalysis(options:SequenceOptions,signal:AbortSi
  const dispose=()=>{worker.dispose();readers.forEach(r=>r.dispose());};
  try{
   await Promise.all([worker.ready,...readers.map(r=>r.ready)]);check(signal);
-  const durations=readers.map(r=>r.video.duration),plan=options.motion?motionSamplingPlan(durations,options.origins,options.bpm):samplingPlan(durations,options.origins,options.bpm),previews:SubjectPreview[]=[];
-  for(let i=0;i<2;i++){const reader=readers[i],t=Math.max(0,Math.min(options.sources[i].time,durations[i]-.05)),capture=await reader.capture(t,true),poses=await worker.detect(capture.frame);check(signal);previews.push({image:capture.image,poses:poses.filter(p=>subjectFromPose(p)!==null),width:reader.video.videoWidth,height:reader.video.videoHeight});}
+  const durations=readers.map(r=>r.video.duration),plan=options.motion?motionSamplingPlan(durations,options.origins,options.bpm):samplingPlan(durations,options.origins,options.bpm,32,options.sources[0].time),previews:SubjectPreview[]=[];
+  for(let i=0;i<2;i++){const reader=readers[i],t=Math.max(0,Math.min(options.sources[i].time,durations[i]-.05)),capture=await reader.capture(t,true),poses=(await worker.detect(capture.frame)).map(visiblePose);check(signal);previews.push({image:capture.image,poses:poses.filter(p=>subjectFromPose(p)!==null),width:reader.video.videoWidth,height:reader.video.videoHeight});}
   return {previews,dispose,async analyzeMotion(indices:[number,number],progress:(done:number,total:number,accepted:number)=>void):Promise<MotionAnalysis>{
    try{
     const tracked=indices.map((index,i)=>subjectFromPose(previews[i].poses[index]||[]));if(tracked.some(v=>!v))throw new Error('2本それぞれで対象の人を選んでください。');
@@ -77,19 +77,18 @@ export async function preparePoseAnalysis(options:SequenceOptions,signal:AbortSi
   },async analyze(indices:[number,number],progress:(done:number,total:number,accepted:number)=>void){
    try{
     const seeds=indices.map((index,i)=>subjectFromPose(previews[i].poses[index]||[]));if(seeds.some(s=>!s))throw new Error('2本それぞれで対象の人を選んでください。');
-    const pairs:PosePair[]=[],bins=new Set<number>();const matrices=options.sources.map(s=>sceneMatrix(s.scene));
+    const pairs:PosePair[]=[];const matrices=options.sources.map(s=>sceneMatrix(s.scene));
     for(let k=0;k<plan.length;k++){
      check(signal);const detected:(Point[]|null)[]=[];
-     for(let i=0;i<2;i++){const {frame}=await readers[i].capture(plan[k][i]),poses=await worker.detect(frame);check(signal);detected.push(selectSubject(poses,seeds[i] as Subject));}
+     for(let i=0;i<2;i++){const {frame}=await readers[i].capture(plan[k][i]),poses=(await worker.detect(frame)).map(visiblePose);check(signal);detected.push(selectSubject(poses,seeds[i] as Subject));}
      if(detected.every(Boolean)){
       const points=detected.map((p,i)=>displayPose(p!.map(point=>projectPoint(matrices[i],point)),{width:previews[i].width,height:previews[i].height},options.stage,options.sources[i].mirror));
       const master=options.master??0;const fixed=options.masterAlignment?transformPose(points[master],options.masterAlignment,options.stage):points[master];
-      pairs.push({reference:fixed,self:perspectivePose(points[1-master],options.alignment,options.stage)});bins.add(Math.min(2,Math.floor(k*3/plan.length)));
+      pairs.push({reference:fixed,self:perspectivePose(points[1-master],options.alignment,options.stage)});
      }
      progress(k+1,plan.length,pairs.length);
     }
-    if(bins.size<3)throw new Error('対象の人を動画の一部でしか確認できませんでした。対象人物とタイミングを確認してください。');
-    const result=fitPoseSequence(pairs,options.stage,options.alignment.rotation);
+    const result=fitPoseSequence(pairs,options.stage,options.alignment.rotation,options.alignment.scale);
     return {...result,sampled:plan.length};
    }finally{dispose();}
   }};
