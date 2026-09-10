@@ -292,3 +292,5 @@
  .overlaid .tool-rail.with-tripod button{flex-direction:row;font-size:10px;gap:2px}
  .overlaid .tripod-symbol svg{display:none}
 }
+
+.recording-audio-option{display:grid;gap:5px}.recording-audio-option p{font-size:12px;color:#a7b4c8}.recording-audio-dialog{gap:12px!important}

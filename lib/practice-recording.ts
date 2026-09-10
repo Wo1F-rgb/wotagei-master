@@ -1,7 +1,7 @@
 /** Keep the speaker route alive after recording: an element can only have one audio source. */
 export class PracticeRecordingAudio {
  private sources=new Map<HTMLMediaElement,MediaElementAudioSourceNode>();
- capture(camera:MediaStream,music:HTMLMediaElement|null,context?:AudioContext){
+ capture(camera:MediaStream,music:HTMLMediaElement|null,context?:AudioContext,external?:MediaStream){
   const video=camera.getVideoTracks().find(track=>track.readyState==='live');
   if(!video)throw new Error('カメラを起動してから録画してください。');
   const tracks:MediaStreamTrack[]=[video.clone()];
@@ -13,7 +13,11 @@ export class PracticeRecordingAudio {
    tracks.forEach(track=>track.stop());
   };
   try{
-   if(music&&context){
+   if(external){
+    const sound=external.getAudioTracks().find(track=>track.readyState==='live');
+    if(!sound)throw new Error('録音する音声が終了しました。もう一度録画してください。');
+    tracks.push(sound.clone());
+   }else if(music&&context){
     source=this.sources.get(music);
     if(!source){source=context.createMediaElementSource(music);source.connect(context.destination);this.sources.set(music,source);}
     destination=context.createMediaStreamDestination();

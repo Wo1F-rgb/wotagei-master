@@ -38,3 +38,12 @@ test('prefer H264/AAC MP4 and fall back to a browser-supported recording format'
  assert.equal(recordingMime(()=>true),'video/mp4;codecs=avc1.42E01E,mp4a.40.2');
  assert.equal(recordingMime(mime=>mime==='video/webm'),'video/webm');assert.equal(recordingMime(()=>false),undefined);
 });
+
+test('external sound is recorded without a speaker connection or using the shared screen as the video',t=>{
+ const {camera,context,nodes}=fixture(t),bus=new PracticeRecordingAudio(),external=context.createMediaStreamDestination().stream;
+ const recording=bus.capture(camera,null,context,external);
+ assert.equal(nodes.length,0);assert.equal(recording.stream.getVideoTracks().length,1);assert.equal(recording.stream.getAudioTracks().length,1);
+ assert.notEqual(recording.stream.getAudioTracks()[0],external.getAudioTracks()[0]);
+ recording.release();assert.equal(camera.getVideoTracks()[0].readyState,'live');assert.equal(external.getAudioTracks()[0].readyState,'live');
+ external.getAudioTracks()[0].stop();assert.throws(()=>bus.capture(camera,null,context,external),/音声が終了/);
+});

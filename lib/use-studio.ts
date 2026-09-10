@@ -16,6 +16,7 @@ import {rememberFile,rememberLink,historyError} from './recent-media';
 import {fetchTwitterVideo,type TwitterLink,type TwitterSource} from './twitter';
 import {restoreVideoDisplay} from './video-display';
 import {PracticeRecordingAudio,recordingMime} from './practice-recording';
+import {requestRecordingSound,recordingSoundError,type RecordingSound} from './recording-sound';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
 const defaultAlignment: Alignment = {x:0,y:0,scale:1,rotation:0,opacity:.5,perspectiveX:0,perspectiveY:0};
@@ -73,7 +74,9 @@ export function useStudio(){
  const [recordingDownload,setRecordingDownload]=useState<Source|null>(null),recordingUrl=useRef<string|null>(null);
  const stream=useRef<MediaStream|null>(null), cameraRequest=useRef(0), running=useRef(false), playRequest=useRef(0), urls=useRef(new Set<string>());
  const recorder=useRef<MediaRecorder|null>(null),recordingAudio=useRef(new PracticeRecordingAudio()),recordingRelease=useRef<(()=>void)|null>(null);
- const [recordingHasMusic,setRecordingHasMusic]=useState(false);
+ const [recordingSound,setRecordingSound]=useState<RecordingSound>('none'),[recordingBusy,setRecordingBusy]=useState(false),[recordingError,setRecordingError]=useState('');
+ const recordingJob=useRef<AbortController|null>(null);
+ function cancelRecordingStart(){recordingJob.current?.abort();recordingJob.current=null;setRecordingBusy(false);setRecordingError('');}
  const liveRateRequest=useRef(0),liveRatePending=useRef(false);
  const taps=useRef<number[][]>([[],[]]), audio=useRef<AudioContext|null>(null), lastTick=useRef(0), selfPlayPending=useRef(false);
  const lifecycle=useRef(true),referenceStalled=useRef(false);
@@ -107,7 +110,7 @@ export function useStudio(){
  function youtubeRate(value:number){if(starting.current||liveRatePending.current||solo.current!==null||previewCue.current!==null)return;if(Number.isFinite(value)&&value>0){const next=value*(soundChoice.current===1?snapshot.current.bpm[0]/snapshot.current.bpm[1]:1);snapshot.current={...snapshot.current,rate:next};setRateState(next);youtubeMetadata();}}
  function youtubeError(message:string){pause();setNotice(message);}
  function loadYoutube(link:YouTubeLink){
-  cancelLinkLoad();
+  cancelRecordingStart();cancelLinkLoad();
   void rememberLink(link.url,'youtube','YouTube · '+link.id).catch(e=>{if(lifecycle.current)setNotice(historyError(e));});
   pause();const previous=sources[0];if(previous&&!previous.youtube){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}youtubeActive.current=true;youtube.current=null;setYoutubeReady(false);setYoutubeRates([1]);files.current[0]=null;
   const key='youtube:'+link.id;if(previous?.key!==key)resetAlignments();let saved:{bpm?:number;kind?:BpmKind;origin?:number}|null=null;
@@ -152,7 +155,7 @@ export function useStudio(){
  }
  function seekSolo(index:number,value:number){pause();const el=index===0?referenceMedia():self.current;if(!el||!sources[index]||(!Number.isFinite(el.duration)||el.duration<=0)||(index===1&&camera))return;el.currentTime=clamp(value,0,el.duration);if(index===0)setTime(el.currentTime);else setSelfTime(el.currentTime);}
  function resetTaps(index:number){taps.current[index]=[];setTapGrids(v=>v.map((n,i)=>i===index?null:n));setTapCounts(v=>v.map((n,i)=>i===index?0:n));}
- function stopCamera(){if(stream.current)pause();cameraRequest.current++;liveRateRequest.current++;liveRatePending.current=false;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(self.current){self.current.pause();self.current.srcObject=null;}snapshot.current={...snapshot.current,camera:false};setCamera(false);setCameraBusy(false);}
+ function stopCamera(){cancelRecordingStart();if(stream.current)pause();cameraRequest.current++;liveRateRequest.current++;liveRatePending.current=false;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(self.current){self.current.pause();self.current.srcObject=null;}snapshot.current={...snapshot.current,camera:false};setCamera(false);setCameraBusy(false);}
  function seek(value:number,loopJump=false){
   youtubeNudge.current=null;cancelCues();if(!loopJump)pause();
   const r=referenceMedia(),s=self.current,c=snapshot.current;
@@ -236,6 +239,7 @@ export function useStudio(){
   setNotice(`${index===0?'お手本':'自分'}の動画を外しました。別の動画を選べます。元のファイルと履歴は残ります。`);
  }
  function loadFile(index:number,file:File,twitter?:{link:TwitterSource;title:string}){
+  cancelRecordingStart();
   if(!file.type.startsWith('video/')&&!/\.(mp4|mov|webm|m4v)$/i.test(file.name)){setNotice('動画ファイル（MP4・MOV・WebM）を選んでください。');return;}
   if(index===0)cancelLinkLoad();
   pause();if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);}files.current[index]=file;if(index===1){resetSound();optimization.current?.abort();originalSelf.current=null;restoreTime.current=null;setOptimized(false);setQuality(null);qualityTick.current={now:0,frames:0};stopCamera();}
@@ -294,37 +298,55 @@ export function useStudio(){
  function markOrigin(index:number){pause();const t=index===0?referenceMedia()?.currentTime:self.current?.currentTime;if(t!==undefined){setOrigins(v=>v.map((n,i)=>i===index?t:n));setNotice(`${index===0?'お手本':'自分'}の「1」を ${t.toFixed(2)} 秒に設定しました。`);}}
  function setSelfPosition(t:number){pause();if(self.current&&!camera){self.current.currentTime=clamp(t,0,durations[1]);setSelfTime(self.current.currentTime);}}
  function loaded(index:number){const el=index===0?referenceMedia():self.current;if(el&&Number.isFinite(el.duration)){if(index===1&&restoreTime.current!==null){el.currentTime=clamp(restoreTime.current,0,el.duration);setSelfTime(el.currentTime);restoreTime.current=null;} setDurations(d=>d.map((v,i)=>i===index?el.duration:v));setOrigins(v=>v.map((n,i)=>i===index?clamp(n,0,el.duration):n));}}
- function toggleRecording(){
-  if(recorder.current?.state==='recording'){recorder.current.stop();return;}
-  if(recorder.current)return;
-  if(!stream.current||typeof MediaRecorder==='undefined'){setNotice('このブラウザはカメラ録画に対応していません。');return;}
-  const parts:Blob[]=[];let r:MediaRecorder,hasMusic=false,release:()=>void=()=>{};
+ async function toggleRecording(requested:RecordingSound='none'):Promise<boolean>{
+  if(recorder.current?.state==='recording'){recorder.current.stop();return false;}
+  if(recordingJob.current){cancelRecordingStart();return false;}
+  if(recorder.current)return false;
+  if(!stream.current||typeof MediaRecorder==='undefined'){setNotice('このブラウザはカメラ録画に対応していません。');return false;}
+  const cameraStream=stream.current,job=new AbortController();recordingJob.current=job;setRecordingBusy(true);setRecordingError('');
+  const kind:RecordingSound=youtubeActive.current?(requested==='music'?'none':requested):sources[0]?'music':'none';
+  let external:Awaited<ReturnType<typeof requestRecordingSound>>|undefined,release:()=>void=()=>{};
   try{
-   const music=!youtubeActive.current&&sources[0]?reference.current:null;
+   if(kind==='microphone'||kind==='tab')external=await requestRecordingSound(kind,job.signal);
+   if(job.signal.aborted||!lifecycle.current||recordingJob.current!==job||stream.current!==cameraStream){external?.release();return false;}
+   const music=kind==='music'?reference.current:null;
    if(music)audio.current??=new AudioContext();
-   const input=recordingAudio.current.capture(stream.current,music,audio.current||undefined);release=input.release;hasMusic=input.hasMusic;
+   const input=recordingAudio.current.capture(cameraStream,music,audio.current||undefined,external?.stream);
+   let released=false;
+   release=()=>{if(released)return;released=true;input.release();external?.release();};
    const mimeType=recordingMime(mime=>MediaRecorder.isTypeSupported(mime));
-   r=new MediaRecorder(input.stream,mimeType?{mimeType}:undefined);
-  }catch{release();setNotice('録画を準備できませんでした。カメラやブラウザの録画・音声対応を確認してください。');return;}
-  recorder.current=r;
-  recordingRelease.current=release;
-  let failed=false;
-  r.ondataavailable=e=>{if(e.data.size)parts.push(e.data);};
-  r.onstop=()=>{
-   release();if(recorder.current===r){recorder.current=null;recordingRelease.current=null;}
-   if(!lifecycle.current)return;
-   setRecording(false);
-   if(failed)return;
-   const blob=new Blob(parts,{type:r.mimeType});if(!blob.size){setNotice('録画を保存できませんでした。');return;}
-   const url=URL.createObjectURL(blob);urls.current.add(url);
-   const previous=recordingUrl.current;recordingUrl.current=url;if(previous&&urls.current.delete(previous))URL.revokeObjectURL(previous);
-   setRecordingDownload({url,name:`wotagei-${new Date().toISOString().replace(/[:.]/g,'-')}.${r.mimeType.includes('mp4')?'mp4':'webm'}`,key:'recording'});
-   setNotice(hasMusic?'録画できました。自分の映像と再生したお手本の音を「録画を保存」から保存できます。':'録画できました。「録画を保存」から保存できます。この録画は自分の映像のみで、YouTubeの音・マイク音は含まれません。');
-  };
-  const fail=()=>{if(recorder.current!==r)return;failed=true;if(r.state!=='inactive')r.stop();else{release();recorder.current=null;recordingRelease.current=null;}if(lifecycle.current){setRecording(false);setNotice('録画中にエラーが発生しました。音声・録画に対応したブラウザで再度試してください。');}};
-  r.onerror=fail;
-  try{r.start(1000);setRecording(true);setRecordingHasMusic(hasMusic);if(hasMusic)void audio.current!.resume().catch(fail);setNotice(hasMusic?'録画中です。お手本の再生・停止や速度変更はそのまま使えます。自分の映像と曲を保存します。':'録画中です。お手本を再生しながら撮影できますが、この録画にYouTubeの音・マイク音は入りません。');}catch{fail();}
+   const r=new MediaRecorder(input.stream,mimeType?{mimeType}:undefined),parts:Blob[]=[];
+   recorder.current=r;recordingRelease.current=release;
+   let failed=false,inputEnded=false;
+   const endInput=()=>{if(r.state==='recording'){inputEnded=true;r.stop();}};
+   const watched=external?.stream.getTracks()||[];watched.forEach(track=>track.addEventListener('ended',endInput));
+   const cleanup=release;release=()=>{watched.forEach(track=>track.removeEventListener('ended',endInput));cleanup();};recordingRelease.current=release;
+   r.ondataavailable=e=>{if(e.data.size)parts.push(e.data);};
+   r.onstop=()=>{
+    release();if(recorder.current===r){recorder.current=null;recordingRelease.current=null;}
+    if(!lifecycle.current)return;
+    setRecording(false);if(failed)return;
+    const blob=new Blob(parts,{type:r.mimeType});if(!blob.size){setNotice('録画を保存できませんでした。');return;}
+    const url=URL.createObjectURL(blob);urls.current.add(url);
+    const previous=recordingUrl.current;recordingUrl.current=url;if(previous&&urls.current.delete(previous))URL.revokeObjectURL(previous);
+    setRecordingDownload({url,name:`wotagei-${new Date().toISOString().replace(/[:.]/g,'-')}.${r.mimeType.includes('mp4')?'mp4':'webm'}`,key:'recording'});
+    const description=kind==='microphone'?'自分の映像とマイクの音':kind==='tab'?'自分の映像と共有したタブの音':kind==='music'?'自分の映像とお手本の音':'自分の映像（音なし）';
+    setNotice(`${inputEnded?'音声入力が終了したため録画を停止しました。':'録画できました。'}${description}を「録画を保存」から保存できます。`);
+   };
+   const fail=()=>{if(recorder.current!==r)return;failed=true;if(r.state!=='inactive')r.stop();else{release();recorder.current=null;recordingRelease.current=null;}if(lifecycle.current){setRecording(false);setNotice('録画中にエラーが発生しました。音声・録画に対応したブラウザで再度試してください。');}};
+   r.onerror=fail;
+   try{r.start(1000);}catch(error){fail();throw error;}
+   setRecording(true);setRecordingSound(kind);
+   if(kind==='music')void audio.current!.resume().catch(fail);
+   setNotice(kind==='microphone'?'マイク付きで録画中です。スピーカーで曲を流してください。周囲の声・足音も録音します。':kind==='tab'?'タブの音付きで録画中です。速度を変えても再生した音を録音します。':kind==='music'?'録画中です。お手本の再生・停止や速度変更はそのまま使えます。自分の映像と曲を保存します。':'音なしで録画中です。お手本はそのまま再生できます。');
+   return true;
+  }catch(error){
+   release();external?.release();
+   if(job.signal.aborted||recordingJob.current!==job||!lifecycle.current)return false;
+   const message=recordingSoundError(error,kind);setRecordingError(message);setNotice(message);return false;
+  }finally{if(recordingJob.current===job){recordingJob.current=null;setRecordingBusy(false);}}
  }
+
  function mediaEnded(){if(solo.current!==null){pause();return;}if(loop.enabled&&loop.end>loop.start){seek(loop.start);void play();}else pause();}
  function mediaPlaying(){referenceStalled.current=false;setBuffering(false);}
  function mediaWaiting(index=0){if(index===(solo.current??soundChoice.current))cancelCues();interruptTap(index);if(index===0&&running.current){referenceStalled.current=true;setBuffering(true);}}
@@ -388,9 +410,9 @@ export function useStudio(){
  },[]);
  useEffect(()=>{
   lifecycle.current=true;
-  const visibility=()=>{if(document.hidden){pause();if(recorder.current?.state==='recording')recorder.current.stop();}};
+  const visibility=()=>{if(document.hidden){cancelRecordingStart();pause();if(recorder.current?.state==='recording')recorder.current.stop();}};
   document.addEventListener('visibilitychange',visibility);
-  return()=>{linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;liveRateRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();if(recorder.current?.state==='recording')recorder.current.stop();recordingRelease.current?.();recordingAudio.current.dispose();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
+  return()=>{linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;recordingJob.current?.abort();recordingJob.current=null;cameraRequest.current++;liveRateRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();if(recorder.current?.state==='recording')recorder.current.stop();recordingRelease.current?.();recordingAudio.current.dispose();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {recordingHasMusic,tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }
