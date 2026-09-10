@@ -15,8 +15,8 @@ const positionFields=[
  {key:'y',label:'上下',min:-100,max:100,step:1,unit:'%'},
  {key:'rotation',label:'画面内の傾き',min:-60,max:60,step:1,unit:'°'},
 ] as const;
-type Props={master:0|1;changeMaster:(value:0|1)=>void;masterDisabled:boolean;manualOnly?:boolean;background:ReactNode;alignment:Alignment;change:(key:keyof Alignment,value:number)=>void;auto:()=>void;autoSequence:()=>void;sequenceHint:string;busy:boolean;disabled:boolean;close:()=>void;reset:()=>void;form:ReactNode};
-export function AlignmentEditor({master,changeMaster,masterDisabled,manualOnly=false,background,alignment:a,change,auto,autoSequence,sequenceHint,busy,disabled,close,reset,form}:Props){
+type Props={master:0|1;changeMaster:(value:0|1)=>void;masterDisabled:boolean;manualOnly?:boolean;motion?:ReactNode;background:ReactNode;alignment:Alignment;change:(key:keyof Alignment,value:number)=>void;auto:()=>void;autoSequence:()=>void;sequenceHint:string;busy:boolean;disabled:boolean;close:()=>void;reset:()=>void;form:ReactNode};
+export function AlignmentEditor({master,changeMaster,masterDisabled,manualOnly=false,motion,background,alignment:a,change,auto,autoSequence,sequenceHint,busy,disabled,close,reset,form}:Props){
  const [tab,setTab]=useState('position');
  const target=master===0?'自分':'お手本';
  return <section className={'alignment-editor'+(manualOnly?' manual-alignment':'')} aria-label="重ね合わせ調整">
@@ -34,6 +34,7 @@ export function AlignmentEditor({master,changeMaster,masterDisabled,manualOnly=f
     </div>)}
    </TabsContent>
    <TabsContent value="position" className="alignment-editor-body alignment-controls"><p>{target}をドラッグで移動、2本指・ホイールで拡縮。{manualOnly?'YouTube内の操作は上のボタンから。':sequenceHint}</p>
+    {motion}
     {positionFields.map(f=><div key={f.key}><label>{f.key==='opacity'?`${target}の濃さ`:f.label}<span>{f.key==='opacity'?Math.round(a[f.key]*100):Number(a[f.key].toFixed(3))}{f.unit}</span></label><Slider aria-label={f.key==='opacity'?`${target}の濃さ`:f.label} value={[a[f.key]]} min={f.min} max={f.max} step={f.step} disabled={busy} onValueChange={v=>change(f.key,Array.isArray(v)?v[0]:v)}/></div>)}
     <button className="button" onClick={reset} disabled={busy}>{target}の位置・遠近をリセット</button>
    </TabsContent>

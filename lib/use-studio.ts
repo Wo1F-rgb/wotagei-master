@@ -14,6 +14,7 @@ import {MIN_PRACTICE_RATE,MAX_PRACTICE_RATE} from './practice-rate';
 import {nudgeFollower,NUDGE_SECONDS,NUDGE_STEP_KEY,restoreNudgeStep,type NudgeResult} from './manual-timing';
 import {rememberFile,rememberLink,historyError} from './recent-media';
 import {fetchTwitterVideo,type TwitterLink,type TwitterSource} from './twitter';
+import {restoreVideoDisplay} from './video-display';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
 const defaultAlignment: Alignment = {x:0,y:0,scale:1,rotation:0,opacity:.5,perspectiveX:0,perspectiveY:0};
@@ -36,7 +37,14 @@ export function useStudio(){
  const [youtubeReady,setYoutubeReady]=useState(false),[youtubeRates,setYoutubeRates]=useState([1]);
  const referenceMedia=()=>youtubeActive.current?youtube.current:reference.current;
  const [sources,setSources]=useState(initialSources), [durations,setDurations]=useState([0,0]);
- const [bpm,setBpm]=useState([120,120]), [origins,setOrigins]=useState([0,0]), [mirrors,setMirrors]=useState([false,true]);
+ const [bpm,setBpm]=useState([120,120]), [origins,setOrigins]=useState([0,0]), [mirrors,setMirrors]=useState([false,false]);
+ const [tripods,setTripods]=useState([true,true]);
+ function setTripod(index:number,value:boolean){
+  if((index!==0&&index!==1)||sources[index]?.youtube||recording)return;
+  pause();setTripods(v=>v.map((old,i)=>i===index?value:old));
+  const source=sources[index];if(!source)return;
+  try{const c=snapshot.current;localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:c.bpm[index],kind:c.bpmKinds[index],origin:c.origins[index],mirror:mirrors[index],tripod:value}));}catch{setNotice('三脚設定は変更しましたが、この端末に保存できませんでした。');}
+ }
  const [rate,setRateState]=useState(1), [time,setTime]=useState(0), [selfTime,setSelfTime]=useState(0);
  const [playing,setPlaying]=useState(false), [buffering,setBuffering]=useState(false),[preparing,setPreparing]=useState(false);
  const [soundSource,setSoundSource]=useState<0|1>(0),soundChoice=useRef<0|1>(0);
@@ -92,7 +100,7 @@ export function useStudio(){
   try{saved=JSON.parse(localStorage.getItem('wotagei:video:'+key)||'null');}catch{}
   const instance=++youtubeLoadSequence.current;
   const restored=restoreTempo(saved);setSources(a=>[{url:link.url,name:'YouTube · '+link.id,key,youtube:link,instance},a[1]]);
-  setBpm(a=>[restored.bpm,a[1]]);setBpmKinds(a=>[restored.kind,a[1]]);setOrigins(a=>[Math.max(0,Number(saved?.origin)||0),a[1]]);setMirrors(a=>[false,a[1]]);
+  setBpm(a=>[restored.bpm,a[1]]);setBpmKinds(a=>[restored.kind,a[1]]);setOrigins(a=>[Math.max(0,Number(saved?.origin)||0),a[1]]);setMirrors(a=>[false,a[1]]);setTripods(a=>[true,a[1]]);
   setTime(link.start);setRateState(1);setDurations(a=>[0,a[1]]);setLoop({enabled:false,start:0,end:0});resetTaps(0);
   setNotice('YouTubeを読み込みます。動画内の▶で視聴、BPMと「1」を設定すると下のボタンで同期再生できます。');
  }
@@ -206,7 +214,7 @@ export function useStudio(){
   for(const url of released){if(url&&urls.current.delete(url))URL.revokeObjectURL(url);}
   setSources(v=>v.map((n,i)=>i===index?null:n));setDurations(v=>v.map((n,i)=>i===index?0:n));
   setBpm(v=>v.map((n,i)=>i===index?120:n));setBpmKinds(v=>v.map((n,i)=>i===index?'unset':n));
-  setOrigins(v=>v.map((n,i)=>i===index?0:n));setMirrors(v=>v.map((n,i)=>i===index?index===1:n));
+  setOrigins(v=>v.map((n,i)=>i===index?0:n));setMirrors(v=>v.map((n,i)=>i===index?false:n));setTripods(v=>v.map((n,i)=>i===index?true:n));
   snapshot.current={...snapshot.current,sources:snapshot.current.sources.map((n,i)=>i===index?null:n)};
   setDrift(0);resetAlignments();resetTaps(index);
   setNotice(`${index===0?'お手本':'自分'}の動画を外しました。別の動画を選べます。元のファイルと履歴は残ります。`);
@@ -220,11 +228,11 @@ export function useStudio(){
   const previous=sources[index];if(previous){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}
   if(previous?.key!==key)resetAlignments();
   setSources(s=>s.map((v,i)=>i===index?{url,name:twitter?.title||file.name,key,...(twitter?{twitter:twitter.link}:{})}:v));setDurations(d=>d.map((v,i)=>i===index?0:v));
-  let saved:{bpm?:number;kind?:BpmKind;origin?:number;mirror?:boolean}|null=null;
+  let saved:{bpm?:number;kind?:BpmKind;origin?:number;mirror?:boolean;tripod?:boolean}|null=null;
   try{saved=JSON.parse(localStorage.getItem('wotagei:video:'+key)||'null');}catch{}
   const restored=restoreTempo(saved);setBpm(v=>v.map((n,i)=>i===index?restored.bpm:n));setBpmKinds(v=>v.map((n,i)=>i===index?restored.kind:n));
   setOrigins(v=>v.map((n,i)=>i===index?Math.max(0,Number(saved?.origin)||0):n));
-  setMirrors(v=>v.map((n,i)=>i===index?(typeof saved?.mirror==='boolean'?saved.mirror:index===1):n));
+  const display=restoreVideoDisplay(saved);setMirrors(v=>v.map((n,i)=>i===index?display.mirror:n));setTripods(v=>v.map((n,i)=>i===index?display.tripod:n));
   if(index===0){setTime(0);setRate(1);setLoop({enabled:false,start:0,end:0});}else{setSelfTime(0);}
   void (twitter?rememberLink(twitter.link.url,'link',twitter.title):rememberFile(file)).catch(e=>{if(lifecycle.current&&files.current[index]===file)setNotice(historyError(e));});
   resetTaps(index);setNotice(restored.kind!=='unset'?'保存済みのBPMと「1」を復元しました。':'BPMは未設定です。横の「設定 → 拍・BPM」から拍タップ・解析・曲選択・手入力ができます。');
@@ -233,7 +241,7 @@ export function useStudio(){
  function persistSettings(quiet:boolean){
   const {sources,bpm,bpmKinds,origins}=snapshot.current;
   if(!sources.some(Boolean)){setNotice('動画を読み込んでから保存してください。');return;}
-  try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i]}));});if(!quiet)setNotice('この端末にBPM・「1」の位置・反転設定を保存しました。次回も同じ動画を選ぶと復元されます。');}catch{setNotice('設定を保存できません。ブラウザのストレージ設定をご確認ください。');}
+  try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i],tripod:tripods[i]}));});if(!quiet)setNotice('この端末にBPM・「1」の位置・反転・三脚設定を保存しました。次回も同じ動画を選ぶと復元されます。');}catch{setNotice('設定を保存できません。ブラウザのストレージ設定をご確認ください。');}
  }
  async function startCamera(){
   resetSound();
@@ -243,7 +251,7 @@ export function useStudio(){
   try{
    const input=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
    if(!lifecycle.current||id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return;}
-   stream.current=input;setCamera(true);setCameraBusy(false);
+   stream.current=input;setCamera(true);setCameraBusy(false);setMirrors(v=>[v[0],false]);setTripods(v=>[v[0],true]);
    if(self.current){self.current.srcObject=input;await self.current.play();}
    setNotice('インカメを起動しました。全身が映る位置に置いて、お手本に合わせて踊りましょう。');
   }catch(e){if(id!==cameraRequest.current)return;stopCamera();setNotice(e instanceof DOMException&&e.name==='NotAllowedError'?'カメラが許可されていません。Safariのカメラ設定から許可してください。':'カメラを起動できません。ほかのアプリで使用中でないか確認してください。');}
@@ -354,5 +362,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }

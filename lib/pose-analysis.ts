@@ -2,12 +2,13 @@ import {publicAsset} from './public-assets';
 import {displayPose,perspectivePose,transformPose,type Point,type Size,type PoseAlignment} from './pose-geometry';
 import {fitPoseSequence,samplingPlan,selectSubject,subjectFromPose,type PosePair,type Subject} from './pose-registration';
 import {projectPoint,sceneMatrix,type SceneCalibration} from './scene-calibration';
+import {motionSamplingPlan,type MotionAnalysis,type MotionSample} from './motion-alignment';
 
 const aborted=()=>new DOMException('解析を中止しました。','AbortError');
 function check(signal:AbortSignal){if(signal.aborted)throw aborted();}
 export type AnalysisSource={url:string;time:number;mirror:boolean;scene:SceneCalibration|null};
 export type SubjectPreview={image:string;poses:Point[][];width:number;height:number};
-export type SequenceOptions={sources:[AnalysisSource,AnalysisSource];origins:number[];bpm:number[];stage:Size;alignment:PoseAlignment;master?:0|1;masterAlignment?:PoseAlignment};
+export type SequenceOptions={sources:[AnalysisSource,AnalysisSource];origins:number[];bpm:number[];stage:Size;alignment:PoseAlignment;master?:0|1;masterAlignment?:PoseAlignment;motion?:boolean};
 
 function poseWorker(signal:AbortSignal){
  if(typeof Worker==='undefined'||typeof OffscreenCanvas==='undefined'||typeof createImageBitmap==='undefined')throw new Error('このブラウザでは複数場面の解析を使えません。「今の1コマで合わせる」を使ってください。');
@@ -54,9 +55,26 @@ export async function preparePoseAnalysis(options:SequenceOptions,signal:AbortSi
  const dispose=()=>{worker.dispose();readers.forEach(r=>r.dispose());};
  try{
   await Promise.all([worker.ready,...readers.map(r=>r.ready)]);check(signal);
-  const durations=readers.map(r=>r.video.duration),plan=samplingPlan(durations,options.origins,options.bpm),previews:SubjectPreview[]=[];
+  const durations=readers.map(r=>r.video.duration),plan=options.motion?motionSamplingPlan(durations,options.origins,options.bpm):samplingPlan(durations,options.origins,options.bpm),previews:SubjectPreview[]=[];
   for(let i=0;i<2;i++){const reader=readers[i],t=Math.max(0,Math.min(options.sources[i].time,durations[i]-.05)),capture=await reader.capture(t,true),poses=await worker.detect(capture.frame);check(signal);previews.push({image:capture.image,poses:poses.filter(p=>subjectFromPose(p)!==null),width:reader.video.videoWidth,height:reader.video.videoHeight});}
-  return {previews,dispose,async analyze(indices:[number,number],progress:(done:number,total:number,accepted:number)=>void){
+  return {previews,dispose,async analyzeMotion(indices:[number,number],progress:(done:number,total:number,accepted:number)=>void):Promise<MotionAnalysis>{
+   try{
+    const tracked=indices.map((index,i)=>subjectFromPose(previews[i].poses[index]||[]));if(tracked.some(v=>!v))throw new Error('2本それぞれで対象の人を選んでください。');
+    const samples:MotionSample[]=[];let accepted=0;
+    for(let k=0;k<plan.length;k++){
+     check(signal);const poses:[Point[]|null,Point[]|null]=[null,null];
+     for(let i=0;i<2;i++){
+      const capture=await readers[i].capture(plan[k][i]),candidates=await worker.detect(capture.frame);check(signal);
+      poses[i]=selectSubject(candidates,tracked[i] as Subject);
+      if(poses[i])tracked[i]=subjectFromPose(poses[i]!);
+     }
+     samples.push({time:plan[k][0],poses});if(poses.every(Boolean))accepted++;
+     progress(k+1,plan.length,accepted);
+    }
+    if(accepted<8)throw new Error('同じ人を追える場面が不足しています。対象人物とBPM・拍の位置を確認してください。');
+    return {samples,sizes:previews.map(p=>({width:p.width,height:p.height})) as [Size,Size],anchor:Math.max(plan[0][0],Math.min(plan.at(-1)![0],options.sources[0].time)),step:plan[1][0]-plan[0][0]};
+   }finally{dispose();}
+  },async analyze(indices:[number,number],progress:(done:number,total:number,accepted:number)=>void){
    try{
     const seeds=indices.map((index,i)=>subjectFromPose(previews[i].poses[index]||[]));if(seeds.some(s=>!s))throw new Error('2本それぞれで対象の人を選んでください。');
     const pairs:PosePair[]=[],bins=new Set<number>();const matrices=options.sources.map(s=>sceneMatrix(s.scene));

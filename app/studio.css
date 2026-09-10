@@ -258,3 +258,30 @@
 @media(orientation:landscape) and (max-height:360px){
  .studio.has-youtube:not(.editing):not(.aligning):has(.decks.overlaid){grid-template-rows:26px 250px 90px}
 }
+
+.motion-layer{position:absolute;inset:0;transform-origin:center;will-change:transform;backface-visibility:hidden}
+.motion-controls{grid-column:1/-1;border:1px solid #566345;border-radius:6px;padding:7px;display:flex;flex-direction:column;gap:6px}
+.motion-controls>div:first-child{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.motion-controls strong{font-size:12px;color:#dae8cb}
+.motion-controls .button{min-height:30px;font-size:12px;padding:3px 7px}
+.motion-controls p{font-size:11px;line-height:1.4}
+.motion-controls .motion-strength label{margin-bottom:8px}
+.motion-badge{top:5px;left:auto;right:5px;border:1px solid #738953;color:#d7f4b2;font-size:10px;z-index:5;min-height:25px}
+.tool-rail.with-tripod{grid-template-rows:repeat(5,minmax(0,1fr))}
+.tool-rail.with-tripod button{font-size:10px;gap:1px}
+.tool-rail.with-tripod button svg{width:14px;height:14px}
+.tripod-symbol{display:flex;align-items:center;gap:1px}
+.tripod-symbol small{font:8px/10px monospace}
+.tool-rail .tripod-toggle[aria-pressed=false]{color:#f1c67e;background:#f1c67e12}
+.tool-rail .tripod-toggle[aria-pressed=true]{color:#acb8cc}
+.overlaid .tool-rail.with-tripod{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr)}
+.overlaid .tool-rail.with-tripod button{flex-direction:column;gap:1px;font-size:10px}
+@media(orientation:portrait) and (max-height:740px){
+ .decks:not(.overlaid) .tool-rail.with-tripod button{flex-direction:row;gap:2px}
+ .decks:not(.overlaid) .tripod-symbol svg{display:none}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .overlaid .tool-rail.with-tripod{grid-template-columns:38px repeat(5,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
+ .overlaid .tool-rail.with-tripod button{flex-direction:row;font-size:10px;gap:2px}
+ .overlaid .tripod-symbol svg{display:none}
+}
