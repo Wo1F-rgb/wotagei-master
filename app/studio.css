@@ -19,15 +19,11 @@
 .youtube-reference,.youtube-mount{width:100%;height:100%;min-width:200px;min-height:200px}
 .youtube-mount[hidden]{display:none}.youtube-mount iframe{display:block;width:100%;height:100%;min-height:200px;border:0}
 .youtube-error{height:100%;padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:14px;color:#e0e9f7;text-align:center}.youtube-error a{color:var(--primary)}
-.studio.has-youtube:not(.editing){grid-template-rows:42px minmax(0,1fr) 98px}
 .has-youtube:not(.editing) .decks{grid-template-rows:minmax(232px,1fr) minmax(0,1fr)}
-.has-youtube .practice-dock{grid-template-columns:minmax(0,1fr);grid-template-rows:27px 44px;gap:7px}
-.has-youtube .practice-dock .count-row{grid-column:1;grid-row:1}.has-youtube .practice-dock .transport{grid-column:1;grid-row:2}
 .has-youtube.editing .deck.selected{grid-template-rows:30px minmax(200px,1fr) minmax(0,264px)}
-.practice-dialog .video-tracks{grid-column:auto;grid-row:auto;min-height:130px;grid-template-rows:30px repeat(2,34px) 24px}
-@media(orientation:landscape){.has-youtube:not(.editing) .decks{grid-template-rows:minmax(200px,1fr)}.has-youtube.editing .deck.selected{grid-template-rows:30px minmax(200px,1fr)}.studio.has-youtube:not(.editing){grid-template-rows:36px minmax(232px,1fr) 62px}.has-youtube .practice-dock{grid-template-columns:minmax(0,1fr) minmax(290px,1fr);grid-template-rows:44px;gap:10px;padding:8px}.has-youtube .practice-dock .count-row{grid-column:1;grid-row:1}.has-youtube .practice-dock .transport{grid-column:2;grid-row:1}}
+@media(orientation:landscape){.has-youtube:not(.editing) .decks{grid-template-rows:minmax(200px,1fr)}.has-youtube.editing .deck.selected{grid-template-rows:30px minmax(200px,1fr)}}
 @media(orientation:portrait) and (max-height:740px){.has-youtube.editing .deck.selected{grid-template-rows:30px 200px minmax(0,1fr)}}
-@media(orientation:landscape) and (max-height:360px){.studio.has-youtube{overflow-y:auto}.studio.has-youtube:not(.editing){grid-template-rows:30px 232px 62px}.has-youtube.editing{grid-template-rows:30px 232px 41px}}
+@media(orientation:landscape) and (max-height:360px){.studio.has-youtube{overflow-y:auto}.studio.has-youtube:not(.editing):not(.aligning){grid-template-rows:26px 222px 112px}.has-youtube.editing{grid-template-rows:30px 232px 41px}}
 /* Status messages stay outside the embedded player's surface. */
 .has-youtube .notice{top:auto;bottom:max(112px,calc(env(safe-area-inset-bottom) + 106px))}
 .has-youtube.editing .notice{bottom:65px}
@@ -59,7 +55,6 @@
 
 .tool-rail.with-remove{grid-template-rows:repeat(4,minmax(0,1fr))}
 
-.track-panel-button:not(.always-visible){display:none}
 .start-sync-cover{position:absolute;inset:0;z-index:6;display:grid;place-items:center;background:#0c111b;color:#d3e4bf;font-size:13px;pointer-events:none}.start-sync-cover span{padding:12px;text-align:center}
 .sound-choice{border:0;display:flex;flex-direction:column;gap:8px}.sound-choice legend{font-size:14px;margin-bottom:8px}.sound-choice>div{display:flex;gap:8px}.sound-choice .button{flex:1}.sound-choice button[aria-pressed=true]{border-color:#cdfa69;color:#cdfa69;background:#cdfa6915}
 /* Both stages share the same cell. Keep the iframe mounted and its controls clickable. */
@@ -76,13 +71,7 @@
 .overlaid .deck-1 .source-choices{pointer-events:auto}
 .empty-stage .source-choices>.button,.empty-stage .source-choices .link-form .button{min-height:32px;padding:4px 8px;font-size:13px}
 .empty-stage .source-choices .link-form input{height:32px}
-@media(orientation:portrait){
- .studio.choosing:not(.editing):not(.aligning){grid-template-rows:42px minmax(0,1fr) 98px}
- .choosing .practice-dock{grid-template-columns:minmax(0,1fr);grid-template-rows:27px 44px;gap:7px}
- .choosing .practice-dock>.video-tracks{display:none}
- .choosing .practice-dock>.count-row{grid-column:1;grid-row:1}
- .choosing .practice-dock>.transport{grid-column:1;grid-row:2}
-}
+
 @media(orientation:portrait) and (max-height:740px){.empty-stage>small{display:none}.empty-stage{padding:5px}.empty-stage p{font-size:13px}}
 .alignment-editor.manual-alignment{grid-template-rows:30px minmax(0,1fr)}
 .manual-alignment .alignment-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;align-content:start}
@@ -91,26 +80,28 @@
 .manual-alignment .alignment-controls>.button{font-size:12px;padding:4px;min-height:36px}
 @media(min-width:1000px){.has-youtube:not(.editing) .decks.youtube-overlaid{grid-template-rows:36px minmax(200px,1fr)}}
 .beat-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:4px 10px;border-bottom:1px solid #344155;flex-shrink:0;background:#111824}.beat-check svg{width:100%;height:34px;min-width:0}.beat-check .button{min-height:34px;font-size:12px;padding:4px 8px}.beat-check small{grid-column:1/-1;font-size:11px;line-height:1.3;color:#afbed4}
-/* Keep landscape practice focused on full-body video; detailed tracks open on demand. */
+/* Keep tracks beside playback controls in landscape, with both videos above. */
 @media(orientation:landscape) and (max-height:500px){
- .studio:not(.editing):not(.aligning){grid-template-rows:34px minmax(0,1fr) 60px;gap:4px;padding-top:max(3px,env(safe-area-inset-top));padding-bottom:max(4px,env(safe-area-inset-bottom))}
- .studio:not(.editing):not(.aligning) .practice-dock{grid-template-columns:minmax(0,1fr) minmax(320px,1.15fr);grid-template-rows:44px;gap:10px;padding:7px 8px}
- .studio .practice-dock>.video-tracks{display:none}
- .studio .practice-dock>.count-row{grid-column:1;grid-row:1;gap:5px}
- .studio .practice-dock>.transport{grid-column:2;grid-row:1;gap:3px}
- .practice-dock .track-panel-button{display:flex}
+ .studio:not(.editing):not(.aligning){grid-template-rows:26px minmax(0,1fr) 112px;gap:3px;padding-top:max(3px,env(safe-area-inset-top));padding-bottom:max(4px,env(safe-area-inset-bottom))}
+ .studio:not(.editing):not(.aligning) .masthead [data-slot=tabs-list]{height:26px!important}
+ .studio:not(.editing):not(.aligning) .deck{grid-template-rows:20px minmax(0,1fr)}
+ .studio:not(.editing):not(.aligning) .decks.overlaid{grid-template-rows:20px minmax(0,1fr)}
+ .studio:not(.editing):not(.aligning) .practice-dock{grid-template-columns:minmax(300px,1fr) minmax(220px,.8fr);grid-template-rows:26px minmax(0,1fr);gap:4px 8px;padding:4px 8px}
+ .studio .practice-dock>.video-tracks{grid-column:1;grid-row:1/-1;grid-template-rows:30px repeat(2,24px) 18px;gap:2px}
+ .studio .practice-dock>.count-row{grid-column:2;grid-row:1;gap:5px}
+ .studio .practice-dock>.transport{grid-column:2;grid-row:2;gap:3px}
  .practice-dock .phrase-label{width:auto;font-size:11px}
  .practice-dock .beat-cells{gap:2px}
  .practice-dock .beat-cells>span{height:26px;font-size:14px}
  .practice-dock .transport-option,.practice-dock .transport>.icon-button,.practice-dock .transport>.play-button{height:44px}
- .practice-dock .transport-option{min-width:43px;padding:0 3px;font-size:11px}
+ .practice-dock .transport-option{min-width:35px;padding:0 2px;font-size:11px}
  .practice-dock .transport>.play-button{font-size:13px;min-width:65px;padding:0 5px;gap:3px}
- .practice-dock .transport>.icon-button{width:28px;flex-shrink:0}
- .studio.has-youtube:not(.editing):not(.aligning){grid-template-rows:34px minmax(232px,1fr) 60px}
+ .practice-dock .transport>.icon-button{width:25px;flex-shrink:0}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks:not(.overlaid){grid-template-rows:minmax(222px,1fr)}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks.youtube-overlaid{grid-template-rows:20px minmax(200px,1fr)}
 }
 @media(orientation:landscape) and (max-height:500px) and (max-width:700px){
  .practice-dock .phrase-label{display:none}
- .studio:not(.editing):not(.aligning) .practice-dock{column-gap:6px}
 }
 
 /* Preserve the two-track layout; only its existing toolbar becomes the compact mixer. */
@@ -136,3 +127,28 @@
 
 .nudge-step-setting select{min-width:100px;min-height:40px;padding:6px;border:1px solid #3a475a;border-radius:6px;background:#202b3a;color:#d6e3f7;font:inherit}
 @media(max-width:360px){.video-tracks .compact-toolbar .track-nudge[data-fine=true]{font-size:10px}}
+
+/* Short portrait screens still show both sources and all three picker rows. */
+@media(orientation:portrait) and (max-height:600px){
+ .studio:not(.editing):not(.aligning){grid-template-rows:30px minmax(0,1fr) 176px;gap:4px;padding-top:max(6px,env(safe-area-inset-top));padding-bottom:max(6px,env(safe-area-inset-bottom))}
+ .studio:not(.editing):not(.aligning) .masthead [data-slot=tabs-list]{height:30px!important}
+ .studio:not(.editing):not(.aligning) .deck{grid-template-rows:20px minmax(0,1fr)}
+ .studio:not(.editing):not(.aligning) .decks.overlaid{grid-template-rows:20px minmax(0,1fr)}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks:not(.overlaid){grid-template-rows:minmax(222px,1fr) minmax(0,1fr)}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks.youtube-overlaid{grid-template-rows:20px minmax(200px,1fr)}
+ .practice-dock{grid-template-rows:20px 102px 34px;gap:4px;padding-block:5px}
+ .practice-dock .video-tracks{grid-template-rows:30px repeat(2,24px) 18px}
+ .practice-dock .beat-cells>span{height:20px;font-size:12px}
+ .practice-dock .click-toggle{flex-direction:row;font-size:10px;gap:3px}
+ .practice-dock .transport-option,.practice-dock .play-button{height:34px;font-size:12px}
+ .has-youtube.choosing .empty-stage>p,.has-youtube.choosing .empty-stage>small{display:none}
+ .has-youtube.choosing .empty-stage .source-choices{gap:3px}
+ .has-youtube.choosing .empty-stage .source-choices>.button{min-height:24px;padding:2px 5px;font-size:12px}
+}
+@media(orientation:landscape) and (max-height:500px) and (max-width:600px){
+ .practice-dock .compact-toolbar .track-nudge{font-size:11px}
+ .practice-dock .compact-toolbar .track-nudge[data-fine=true]{font-size:10px}
+}
+
+/* Playback messages must not cover the always-visible timing controls. */
+.has-youtube:not(.editing):not(.aligning) .notice{top:max(54px,calc(env(safe-area-inset-top) + 49px));bottom:auto;left:14px;right:14px}
