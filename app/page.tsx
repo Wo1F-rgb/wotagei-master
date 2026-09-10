@@ -83,7 +83,9 @@ export default function Home(){
  const targetSelf=mapSelfTime(s.time,s.origins[0],s.origins[1],s.bpm[0],s.bpm[1]);
  const missingBpm=s.bpmKinds[0]==='unset'?0:s.sources[1]&&!s.camera&&s.bpmKinds[1]==='unset'?1:null;
  const counted=hasReference&&s.bpmKinds[s.soundSource]!=='unset';
- const overlay=mode==='overlay'&&config===null;
+ const choosing=!s.sources[0]||(!s.sources[1]&&!s.camera);
+ // Keep source pickers in separate decks until both videos (or the camera) are selected.
+ const overlay=mode==='overlay'&&config===null&&!choosing;
  useLayoutEffect(()=>{
   if(!overlay)return;const r=s.reference.current,v=s.self.current;if(!r?.videoWidth||!v?.videoWidth||stageSize.width<=0||stageSize.height<=0)return;
   const key=(s.sources[0]?.url||'')+'|'+(s.camera?'camera':s.sources[1]?.url||''),previous=lastAlignmentStage.current;
@@ -100,7 +102,7 @@ export default function Home(){
  }
  function openFirstBeat(){s.pause();s.setNotice('');s.seekSolo(0,s.origins[0]);s.seekSolo(1,s.origins[1]);setConfig(null);setPanel('firstBeat');}
  function openConfig(index:number,tab?:ConfigStep){setPanel(null);s.pause();s.setNotice('');setStep(tab||(s.sources[index]&&!(index===1&&s.camera)?'tempo':'source'));setConfig(index);}
- function removeVideo(index:number){s.removeVideo(index);setConfig(null);setPanel(null);setMode('compare');}
+ function removeVideo(index:number){s.removeVideo(index);setConfig(null);setPanel(null);}
  function closeConfig(save=false){s.pause();if(save)s.saveSettings();setConfig(null);}
  function changeStep(value:string){s.pause();s.setNotice('');setStep(value as ConfigStep);}
  function setLoopFromMeasure(count:number){const bounds=measureLoop(s.time,s.origins[0],s.bpm[0],count,s.durations[0]);if(bounds.end-bounds.start<.1){s.setNotice('少し前に戻して、ループする区間を選んでください。');return;}setMeasures(count);s.setLoop({...bounds,enabled:true});s.seek(bounds.start);}
@@ -108,7 +110,7 @@ export default function Home(){
   let saved:string;
   if(isTwitterUrl(value)){const twitter=parseTwitterLink(value);if(!await s.loadTwitter(twitter))return;saved=twitter.url;}
   else{const youtube=parseYouTubeLink(value);s.loadYoutube(youtube);saved=youtube.url;}
-  setMode('compare');setConfig(null);setPanel(null);setSavedLink(saved);setLink('');
+  setConfig(null);setPanel(null);setSavedLink(saved);setLink('');
   try{localStorage.setItem('wotagei:reference-link',saved);}catch{}
  }catch(e){s.setNotice(e instanceof TypeError?'YouTube・Xの投稿URLを https:// から貼ってください。':e instanceof Error?e.message:'動画のリンクを確認してください。');}}
 
@@ -128,7 +130,7 @@ export default function Home(){
   {recentPicker(i)}
  </div>;
  const silentTapNotice=config!==null&&step==='tempo'&&/^(TAP:|毎拍)/.test(s.notice);
- return <main className={'studio '+(config!==null?'editing ':'')+(!s.sources[0]||(!s.sources[1]&&!s.camera)?'choosing ':'')+(isYoutube?'has-youtube ':'')+(panel==='alignment'||panel==='firstBeat'?'aligning':'')+(panel==='firstBeat'?' first-beat-timing':'')}>
+ return <main className={'studio '+(config!==null?'editing ':'')+(choosing?'choosing ':'')+(isYoutube?'has-youtube ':'')+(panel==='alignment'||panel==='firstBeat'?'aligning':'')+(panel==='firstBeat'?' first-beat-timing':'')}>
   <header className="masthead"><div className="brand">{config!==null?<button className="icon-button" aria-label="練習画面に戻る" onClick={()=>closeConfig()}><ArrowLeft/></button>:<Activity className="brandmark"/>}<h1>{config!==null?`${config===0?'お手本':'自分'}の設定`:'ヲタ芸マスター'}</h1></div>{config===null?<Tabs value={mode} onValueChange={v=>{if(v==='compare')setPanel(null);setMode(String(v));}}><TabsList aria-label="動画の表示"><TabsTrigger value="compare"><Columns2/><span>比較</span></TabsTrigger><TabsTrigger value="overlay"><Layers2/><span>重ねる</span></TabsTrigger></TabsList></Tabs>:<span className="private-label">動画ごとに設定</span>}</header>
   <div className={'decks '+(overlay?'overlaid '+(s.alignmentMaster===1?'alignment-master-self ':''):'')+(overlay&&isYoutube?'youtube-overlaid ':'')+(youtubeControls?'youtube-controls-visible ':'')+(config!==null?'configuring':'')}>
    {[0,1].map(i=>{
@@ -148,7 +150,7 @@ export default function Home(){
       {s.preparing&&!live&&!yt&&<div className="start-sync-cover" role="status"><span>開始位置を合わせています…</span></div>}{i===0&&!yt&&s.buffering&&<span className="stage-badge">読み込み中</span>}{live&&s.recording&&<span className="stage-badge rec">● REC</span>}
       {i===1&&source&&!live&&s.playing&&(targetSelf<0||targetSelf>=s.durations[1])&&<span className="stage-badge">{targetSelf<0?'動画の開始前':'動画の終了後'}</span>}
       {selected&&available&&!yt&&<div className="preview-tools"><Range label={`${i===0?'お手本':'自分'}の位置を調整`} value={t} max={s.durations[i]} onChange={v=>s.seekSolo(i,v)}/><div><button className="preview-nudge" onClick={()=>s.seekSolo(i,t-.1)} aria-label="0.1秒戻す"><ChevronLeft size={16}/><span>0.1秒</span></button><button className="preview-play" onClick={()=>s.soloPlaying===i?s.pause():void s.playSolo(i)} aria-label={s.soloPlaying===i?'この動画を一時停止':'この動画だけ等速で音付き再生'}>{s.soloPlaying===i?<Pause size={18}/>:<Play size={18}/>}<span>{s.soloPlaying===i?'停止':'等速再生'}</span></button><button className="preview-nudge" onClick={()=>s.seekSolo(i,t+.1)} aria-label="0.1秒進める"><span>0.1秒</span><ChevronRight size={16}/></button><span className="mono">{timeLabel(t)}</span></div></div>}
-     </div><aside className={`tool-rail${source&&!live?' with-remove':''}`} aria-label={`${i===0?'お手本':'自分'}の操作`}><button className={selected?'active':''} disabled={s.recording} onClick={()=>selected?closeConfig():openConfig(i)} aria-label={`${i===0?'お手本':'自分'}の設定`} aria-pressed={selected}><Settings2/><span>{selected?'戻る':'設定'}</span></button><button disabled={yt} title={yt?'YouTubeの反転はできません':undefined} onClick={()=>s.setMirrors(a=>a.map((v,j)=>i===j?!v:v))} aria-pressed={s.mirrors[i]}><FlipHorizontal2/><span>反転</span></button>{live?<button className={s.recording?'recording':''} onClick={s.toggleRecording} aria-label={s.recording?'録画停止':'録画開始'}>{s.recording?<Square/>:<span className="rec-dot"/>}<span>{s.recording?'停止':'録画'}</span></button>:<button disabled={s.recording} onClick={()=>openConfig(i,'source')}><Upload/><span>{source?'変更':'読込'}</span></button>}{source&&!live&&<button disabled={s.recording} onClick={()=>removeVideo(i)} aria-label={`${i===0?'お手本':'自分'}の動画を外す`}><X/><span>外す</span></button>}</aside></div>
+     </div><aside className={`tool-rail${source&&!live?' with-remove':''}`} aria-label={`${i===0?'お手本':'自分'}の操作`}><span className="tool-rail-label" aria-hidden="true">{i===0?'お手本':'自分'}</span><button className={selected?'active':''} disabled={s.recording} onClick={()=>selected?closeConfig():openConfig(i)} aria-label={`${i===0?'お手本':'自分'}の設定`} aria-pressed={selected}><Settings2/><span>{selected?'戻る':'設定'}</span></button><button disabled={yt} title={yt?'YouTubeの反転はできません':undefined} onClick={()=>s.setMirrors(a=>a.map((v,j)=>i===j?!v:v))} aria-pressed={s.mirrors[i]}><FlipHorizontal2/><span>反転</span></button>{live?<button className={s.recording?'recording':''} onClick={s.toggleRecording} aria-label={s.recording?'録画停止':'録画開始'}>{s.recording?<Square/>:<span className="rec-dot"/>}<span>{s.recording?'停止':'録画'}</span></button>:<button disabled={s.recording} onClick={()=>openConfig(i,'source')}><Upload/><span>{source?'変更':'読込'}</span></button>}{source&&!live&&<button disabled={s.recording} onClick={()=>removeVideo(i)} aria-label={`${i===0?'お手本':'自分'}の動画を外す`}><X/><span>外す</span></button>}</aside></div>
      {selected&&<Tabs className="video-config" value={step} onValueChange={v=>changeStep(String(v))}><TabsList aria-label="動画設定の項目"><TabsTrigger value="tempo">拍・BPM</TabsTrigger><TabsTrigger value="origin">拍の位置</TabsTrigger><TabsTrigger value="display">表示</TabsTrigger><TabsTrigger value="camera">画角</TabsTrigger><TabsTrigger value="source">動画</TabsTrigger></TabsList>{(step==='tempo'||step==='origin')&&<BeatPreview time={t} origin={s.origins[i]} bpm={s.bpm[i]} playing={s.beatPreview===i} disabled={!available||s.bpmKinds[i]==='unset'} toggle={()=>s.beatPreview===i?s.pause():void s.previewBeats(i)}/>}
       <TabsContent value="origin" className="config-content"><h2>拍の位置を微調整</h2><p>拍タップで位置も設定済みです。ずれが残る場合は秒数を調整するか、動画の位置を選び直せます。</p>{yt&&<p className="config-hint">YouTube内の操作で再生・停止してください。頭出しはフレーム単位の精度ではありません。</p>}<button className="button primary wide" disabled={!available} onClick={()=>s.markOrigin(i)}><Check size={17}/>この位置を最初の「1」にする</button><div className="origin-value"><Numeric label="「1」の位置（秒）" value={s.origins[i]} max={s.durations[i]||999} step={.01} disabled={!available} onChange={v=>{s.pause();s.setOrigins(a=>a.map((n,j)=>i===j?v:n));}}/><button className="button" disabled={!available} onClick={()=>s.seekSolo(i,s.origins[i])}>「1」に戻る</button></div>{!available&&<span className="config-hint">{live?'インカメは曲に合わせて踊るので、起点設定は不要です。':'「動画」タブで先に動画を選んでください。'}</span>}</TabsContent>
       <TabsContent value="tempo" className="config-content tempo-content"><TempoConfig key={source?.key||i} remote={yt} file={s.files.current[i]} live={live} bpm={s.bpm[i]} kind={s.bpmKinds[i]} tapRecording={s.tapRecording===i} tapGrid={s.tapGrids[i]} beginTap={()=>void s.beginTap(i)} finishTap={s.finishTap} tapCount={s.tapCounts[i]} tap={()=>s.tap(i)} apply={(v,kind)=>s.applyBpm(i,v,kind)} pause={s.pause}/></TabsContent>

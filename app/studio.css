@@ -181,3 +181,80 @@
 .alignment-editor .alignment-controls>p{grid-column:1/-1}
 .alignment-editor .alignment-controls label{font-size:12px;margin-bottom:6px}
 .alignment-editor .alignment-controls>.button{font-size:11px;min-height:32px;padding:4px;white-space:normal}
+
+/* Reserve more of the practice viewport for video, keeping both tracks visible. */
+.studio:not(.editing):not(.aligning){grid-template-rows:42px minmax(0,1fr) 166px}
+.practice-dock{grid-template-rows:20px 90px 36px;gap:4px;padding:5px 10px}
+.studio .practice-dock>.video-tracks{grid-template-rows:28px repeat(2,20px) 16px;gap:2px}
+.practice-dock .position-label{font-size:10px;line-height:10px}
+.practice-dock .beat-cells>span{height:20px;font-size:12px}
+.practice-dock .click-toggle{flex-direction:row;gap:4px;font-size:10px}
+.practice-dock .compact-toolbar button,.practice-dock .compact-toolbar select{height:28px;min-height:28px}
+.practice-dock .track-name{font-size:10px;line-height:10px}
+.practice-dock .track-name small{font-size:10px;line-height:10px}
+.practice-dock .track-clip{inset-block:1px}
+.practice-dock .track-clip>span{display:none}
+.practice-dock .track-tick,.practice-dock .track-one{font-size:11px;line-height:15px;padding-top:0}
+.practice-dock .track-seek{gap:6px}
+.practice-dock .track-seek>span{font-size:11px}
+.practice-dock .transport-option,.practice-dock .transport>.icon-button,.practice-dock .transport>.play-button{height:36px}
+.practice-dock .transport-option{font-size:11px;gap:1px}
+.practice-dock .transport-option strong{font-size:13px}
+.practice-dock .transport svg{width:19px;height:19px}
+
+/* Both layers fill the same video cell. Move the existing controls, not the players. */
+.tool-rail-label{display:none}
+.studio .decks.overlaid{grid-template-columns:minmax(0,1fr) 54px;grid-template-rows:28px minmax(0,1fr) 44px}
+.studio.has-youtube .decks.youtube-overlaid{grid-template-rows:28px minmax(200px,1fr) 44px}
+.overlaid .deck-0 .deck-header{grid-column:1}
+.overlaid .deck-1 .deck-header{grid-column:2}
+.overlaid .video-stage,.overlaid .alignment-gestures{grid-column:1/-1}
+.overlaid .tool-rail{grid-row:3;width:50%;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr);border:0;border-top:1px solid #344052;z-index:9}
+.overlaid .tool-rail.with-remove{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr)}
+.overlaid .deck-0 .tool-rail{grid-column:1/-1;justify-self:start}
+.overlaid .deck-1 .tool-rail{grid-column:1/-1;justify-self:end;border-left:1px solid #344052}
+.overlaid .tool-rail-label{display:block;grid-column:1/-1;text-align:center;color:var(--deck-color);background:color-mix(in srgb,var(--deck-color) 6%,#181e28);font-size:10px;line-height:12px}
+.overlaid .tool-rail button{flex-direction:row;gap:3px;padding:0 2px;border-bottom:0;border-right:1px solid #2a3341;font-size:10px;line-height:12px;white-space:nowrap;touch-action:manipulation}
+.overlaid .tool-rail button:last-child{border-right:0}
+.overlaid .tool-rail button svg{width:14px;height:14px;flex-shrink:0}
+.overlaid .tool-rail button:active{background:color-mix(in srgb,var(--deck-color) 18%,#181e28)}
+.overlaid .tool-rail button:focus-visible{outline:2px solid var(--deck-color);outline-offset:-2px}
+@media(max-width:400px){
+ .overlaid .deck-header{gap:4px;padding-inline:6px}
+ .overlaid .deck-header strong{font-size:12px}
+ .overlaid .deck-status{font-size:10px}
+ .overlaid .youtube-overlay-toggle{font-size:10px!important;min-height:22px!important;padding-inline:4px!important}
+}
+@media(min-width:1000px){
+ .studio:not(.editing):not(.aligning){grid-template-rows:48px minmax(0,1fr) 130px}
+ .practice-dock{grid-template-rows:22px 90px;gap:6px 24px}
+ .practice-dock .beat-cells>span{height:22px;font-size:14px}
+ .studio .decks.overlaid{grid-template-rows:32px minmax(0,1fr) 44px}
+ .studio.has-youtube .decks.youtube-overlaid{grid-template-rows:32px minmax(200px,1fr) 44px}
+ .overlaid .tool-rail button{font-size:12px}
+ .overlaid .tool-rail button svg{width:17px;height:17px}
+}
+@media(orientation:portrait) and (max-height:600px){
+ .studio:not(.editing):not(.aligning){grid-template-rows:30px minmax(0,1fr) 166px}
+ .studio:not(.editing):not(.aligning) .decks.overlaid{grid-template-rows:28px minmax(0,1fr) 44px}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks.youtube-overlaid{grid-template-rows:28px minmax(200px,1fr) 44px}
+ .decks:not(.overlaid) .tool-rail button{flex-direction:row;font-size:10px;gap:2px}
+ .decks:not(.overlaid) .tool-rail button svg{width:14px;height:14px;flex-shrink:0}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .studio:not(.editing):not(.aligning){grid-template-rows:26px minmax(0,1fr) 90px;gap:2px;padding-top:max(2px,env(safe-area-inset-top));padding-bottom:max(2px,env(safe-area-inset-bottom))}
+ .studio:not(.editing):not(.aligning) .practice-dock{grid-template-rows:22px minmax(0,1fr);gap:3px 8px;padding:2px 8px}
+ .studio .practice-dock>.video-tracks{grid-template-rows:26px repeat(2,18px) 16px}
+ .practice-dock .compact-toolbar button,.practice-dock .compact-toolbar select{height:26px;min-height:26px}
+ .practice-dock .beat-cells>span{height:20px;font-size:12px}
+ .practice-dock .transport-option,.practice-dock .transport>.icon-button,.practice-dock .transport>.play-button{height:36px}
+ .studio:not(.editing):not(.aligning) .decks.overlaid{grid-template-rows:20px minmax(0,1fr) 28px}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks.youtube-overlaid{grid-template-rows:20px minmax(200px,1fr) 28px}
+ .overlaid .tool-rail,.overlaid .tool-rail.with-remove{grid-template-columns:38px repeat(3,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
+ .overlaid .tool-rail.with-remove{grid-template-columns:38px repeat(4,minmax(0,1fr))}
+ .overlaid .tool-rail-label{grid-column:1;display:grid;place-items:center;line-height:12px;background:transparent}
+ .overlaid .youtube-overlay-toggle{min-height:18px!important;font-size:10px!important;padding-block:0!important}
+}
+@media(orientation:landscape) and (max-height:360px){
+ .studio.has-youtube:not(.editing):not(.aligning):has(.decks.overlaid){grid-template-rows:26px 250px 90px}
+}
