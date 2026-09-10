@@ -152,3 +152,6 @@
 
 /* Playback messages must not cover the always-visible timing controls. */
 .has-youtube:not(.editing):not(.aligning) .notice{top:max(54px,calc(env(safe-area-inset-top) + 49px));bottom:auto;left:14px;right:14px}
+
+.position-label{display:flex;flex-direction:column;justify-content:center;flex-shrink:0;min-width:44px;color:#b4c2d7;font:11px/12px monospace;white-space:nowrap}
+@media(orientation:portrait) and (max-height:600px){.position-label{font-size:10px;line-height:10px}}

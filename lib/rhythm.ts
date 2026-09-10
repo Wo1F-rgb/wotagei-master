@@ -1,7 +1,7 @@
 export const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 export function beatAt(time: number, origin: number, bpm: number) {
   const index = Math.floor((time - origin) * bpm / 60 + 1e-7);
-  return { index, beat: ((index % 8) + 8) % 8 + 1, phrase: Math.floor(index / 8) + 1 };
+  return { index, beat: ((index % 8) + 8) % 8 + 1, measure: index>=0?Math.floor(index / 4) + 1:0, technique: index>=0?Math.floor(index / 32) + 1:0 };
 }
 export function mapSelfTime(referenceTime: number, referenceOrigin: number, selfOrigin: number, referenceBpm: number, selfBpm: number) {
   return selfOrigin + (referenceTime - referenceOrigin) * referenceBpm / selfBpm;
@@ -24,11 +24,11 @@ export function tapTempo(timestamps: number[]) {
   for(let i=0;i<times.length;i++)for(let j=i+1;j<times.length;j++)if(beats[j]-beats[i]>=4)slopes.push((times[j]-times[i])/(beats[j]-beats[i]));
   return slopes.length?Math.round(600000/median(slopes))/10:null;
 }
-export function phraseLoop(time: number, origin: number, bpm: number, phrases: number, duration: number) {
-  const phrase = Math.floor((time - origin) * bpm / 480 + 1e-7);
-  const rawStart = origin + Math.max(0, phrase) * 480 / bpm;
+export function measureLoop(time: number, origin: number, bpm: number, measures: number, duration: number) {
+  const measure = Math.floor((time - origin) * bpm / 240 + 1e-7);
+  const rawStart = origin + Math.max(0, measure) * 240 / bpm;
   const start = clamp(rawStart, 0, duration);
-  const end = clamp(rawStart + phrases * 480 / bpm, 0, duration);
+  const end = clamp(rawStart + measures * 240 / bpm, 0, duration);
   return { start, end };
 }
 export function timeLabel(value: number) {
