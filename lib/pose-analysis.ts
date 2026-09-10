@@ -1,5 +1,5 @@
 import {publicAsset} from './public-assets';
-import {displayPose,perspectivePose,type Point,type Size,type PoseAlignment} from './pose-geometry';
+import {displayPose,perspectivePose,transformPose,type Point,type Size,type PoseAlignment} from './pose-geometry';
 import {fitPoseSequence,samplingPlan,selectSubject,subjectFromPose,type PosePair,type Subject} from './pose-registration';
 import {projectPoint,sceneMatrix,type SceneCalibration} from './scene-calibration';
 
@@ -7,7 +7,7 @@ const aborted=()=>new DOMException('解析を中止しました。','AbortError'
 function check(signal:AbortSignal){if(signal.aborted)throw aborted();}
 export type AnalysisSource={url:string;time:number;mirror:boolean;scene:SceneCalibration|null};
 export type SubjectPreview={image:string;poses:Point[][];width:number;height:number};
-export type SequenceOptions={sources:[AnalysisSource,AnalysisSource];origins:number[];bpm:number[];stage:Size;alignment:PoseAlignment};
+export type SequenceOptions={sources:[AnalysisSource,AnalysisSource];origins:number[];bpm:number[];stage:Size;alignment:PoseAlignment;master?:0|1;masterAlignment?:PoseAlignment};
 
 function poseWorker(signal:AbortSignal){
  if(typeof Worker==='undefined'||typeof OffscreenCanvas==='undefined'||typeof createImageBitmap==='undefined')throw new Error('このブラウザでは複数場面の解析を使えません。「今の1コマで合わせる」を使ってください。');
@@ -65,7 +65,8 @@ export async function preparePoseAnalysis(options:SequenceOptions,signal:AbortSi
      for(let i=0;i<2;i++){const {frame}=await readers[i].capture(plan[k][i]),poses=await worker.detect(frame);check(signal);detected.push(selectSubject(poses,seeds[i] as Subject));}
      if(detected.every(Boolean)){
       const points=detected.map((p,i)=>displayPose(p!.map(point=>projectPoint(matrices[i],point)),{width:previews[i].width,height:previews[i].height},options.stage,options.sources[i].mirror));
-      pairs.push({reference:points[0],self:perspectivePose(points[1],options.alignment,options.stage)});bins.add(Math.min(2,Math.floor(k*3/plan.length)));
+      const master=options.master??0;const fixed=options.masterAlignment?transformPose(points[master],options.masterAlignment,options.stage):points[master];
+      pairs.push({reference:fixed,self:perspectivePose(points[1-master],options.alignment,options.stage)});bins.add(Math.min(2,Math.floor(k*3/plan.length)));
      }
      progress(k+1,plan.length,pairs.length);
     }

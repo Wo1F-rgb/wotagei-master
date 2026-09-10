@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState,type SetStateAction } from 'react';
 import { clamp, mapSelfTime, comparisonRates } from './rhythm';
 import { prepareSoloPlayback, restoreComparisonAudio } from './solo';
 import { firstBeatStart } from './first-beat';
@@ -56,7 +56,11 @@ export function useStudio(){
  const optimization=useRef<AbortController|null>(null),originalSelf=useRef<Source|null>(null),restoreTime=useRef<number|null>(null),qualityTick=useRef({now:0,frames:0});
  const [loop,setLoop]=useState({enabled:false,start:0,end:0});
  const [camera,setCamera]=useState(false), [cameraBusy,setCameraBusy]=useState(false), [recording,setRecording]=useState(false);
- const [notice,setNotice]=useState(''), [alignment,setAlignment]=useState(defaultAlignment), [click,setClick]=useState(false);
+ const [notice,setNotice]=useState(''), [click,setClick]=useState(false);
+ const [alignments,setAlignments]=useState<[Alignment,Alignment]>([{...defaultAlignment},{...defaultAlignment}]);
+ const [alignmentMaster,setAlignmentMaster]=useState<0|1>(0),alignmentTarget=1-alignmentMaster,alignment=alignments[alignmentTarget];
+ function setAlignment(action:SetStateAction<Alignment>){setAlignments(v=>v.map((a,i)=>i===alignmentTarget?(typeof action==='function'?action(a):action):a) as [Alignment,Alignment]);}
+ function resetAlignments(){setAlignments([{...defaultAlignment},{...defaultAlignment}]);}
  const [recordingDownload,setRecordingDownload]=useState<Source|null>(null);
  const stream=useRef<MediaStream|null>(null), cameraRequest=useRef(0), running=useRef(false), playRequest=useRef(0), urls=useRef(new Set<string>());
  const recorder=useRef<MediaRecorder|null>(null);
@@ -84,7 +88,7 @@ export function useStudio(){
   cancelLinkLoad();
   void rememberLink(link.url,'youtube','YouTube · '+link.id).catch(e=>{if(lifecycle.current)setNotice(historyError(e));});
   pause();const previous=sources[0];if(previous&&!previous.youtube){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}youtubeActive.current=true;youtube.current=null;setYoutubeReady(false);setYoutubeRates([1]);files.current[0]=null;
-  const key='youtube:'+link.id;let saved:{bpm?:number;kind?:BpmKind;origin?:number}|null=null;
+  const key='youtube:'+link.id;if(previous?.key!==key)resetAlignments();let saved:{bpm?:number;kind?:BpmKind;origin?:number}|null=null;
   try{saved=JSON.parse(localStorage.getItem('wotagei:video:'+key)||'null');}catch{}
   const instance=++youtubeLoadSequence.current;
   const restored=restoreTempo(saved);setSources(a=>[{url:link.url,name:'YouTube · '+link.id,key,youtube:link,instance},a[1]]);
@@ -204,7 +208,7 @@ export function useStudio(){
   setBpm(v=>v.map((n,i)=>i===index?120:n));setBpmKinds(v=>v.map((n,i)=>i===index?'unset':n));
   setOrigins(v=>v.map((n,i)=>i===index?0:n));setMirrors(v=>v.map((n,i)=>i===index?index===1:n));
   snapshot.current={...snapshot.current,sources:snapshot.current.sources.map((n,i)=>i===index?null:n)};
-  setDrift(0);setAlignment({...defaultAlignment});resetTaps(index);
+  setDrift(0);resetAlignments();resetTaps(index);
   setNotice(`${index===0?'お手本':'自分'}の動画を外しました。別の動画を選べます。元のファイルと履歴は残ります。`);
  }
  function loadFile(index:number,file:File,twitter?:{link:TwitterSource;title:string}){
@@ -214,7 +218,7 @@ export function useStudio(){
   const url=URL.createObjectURL(file);urls.current.add(url);
   const key=twitter?`twitter:${twitter.link.id}:${twitter.link.video}`:`${file.name}|${file.size}|${file.lastModified}`;
   const previous=sources[index];if(previous){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}
-  if(previous?.key!==key)setAlignment({...defaultAlignment});
+  if(previous?.key!==key)resetAlignments();
   setSources(s=>s.map((v,i)=>i===index?{url,name:twitter?.title||file.name,key,...(twitter?{twitter:twitter.link}:{})}:v));setDurations(d=>d.map((v,i)=>i===index?0:v));
   let saved:{bpm?:number;kind?:BpmKind;origin?:number;mirror?:boolean}|null=null;
   try{saved=JSON.parse(localStorage.getItem('wotagei:video:'+key)||'null');}catch{}
@@ -350,5 +354,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }

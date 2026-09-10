@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type CSSProperties} from 'react';
 import {YouTubeMedia,youtubeError,type YouTubeLink,type YouTubePlayer} from '@/lib/youtube';
 
 type Event={target:YouTubePlayer;data:number};
@@ -19,7 +19,7 @@ function loadAPI():Promise<API>{
  }).catch(e=>{apiPromise=null;throw e;});
  return apiPromise;
 }
-type Props={link:YouTubeLink;ready:(media:YouTubeMedia|null)=>void;state:(state:number)=>void;rate:(value:number)=>void;error:(message:string)=>void;metadata:()=>void};
+type Props={style?:CSSProperties;link:YouTubeLink;ready:(media:YouTubeMedia|null)=>void;state:(state:number)=>void;rate:(value:number)=>void;error:(message:string)=>void;metadata:()=>void};
 export function YouTubeReference(props:Props){
  const mount=useRef<HTMLDivElement>(null),callbacks=useRef(props);callbacks.current=props;
  const [error,setError]=useState(''),[attempt,setAttempt]=useState(0);
@@ -45,5 +45,5 @@ export function YouTubeReference(props:Props){
   }).catch(e=>fail(e instanceof Error?e.message:'YouTubeを読み込めません。'));
   return()=>{disposed=true;clearTimeout(readyTimer);clearInterval(poll);media?.cancel();callbacks.current.ready(null);player?.destroy();};
  },[props.link.id,props.link.start,attempt]);
- return <div className="youtube-reference"><div ref={mount} className="youtube-mount" hidden={!!error}/>{error&&<div className="youtube-error" role="alert"><span>{error}</span><button className="button mini" onClick={()=>setAttempt(n=>n+1)}>再読込</button><a href={props.link.url} target="_blank" rel="noopener noreferrer">YouTubeで開く</a></div>}</div>;
+ return <div className="youtube-reference" style={props.style}><div ref={mount} className="youtube-mount" hidden={!!error}/>{error&&<div className="youtube-error" role="alert"><span>{error}</span><button className="button mini" onClick={()=>setAttempt(n=>n+1)}>再読込</button><a href={props.link.url} target="_blank" rel="noopener noreferrer">YouTubeで開く</a></div>}</div>;
 }
