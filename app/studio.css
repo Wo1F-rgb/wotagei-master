@@ -133,3 +133,6 @@
 .video-tracks .compact-toolbar button:focus-visible,.video-tracks .compact-toolbar select:focus-visible{outline:2px solid #fff;outline-offset:1px}
 .track-name[data-selected=true]{border-left:2px solid var(--track);padding-left:4px}.track-clip:disabled{opacity:.7;cursor:default}
 @media(max-width:360px){.video-tracks .compact-toolbar button{font-size:11px;padding-inline:0}.video-tracks .compact-toolbar select{font-size:10px;padding-left:1px;padding-right:11px}.video-tracks .track-toolbar.compact-toolbar{gap:2px}}
+
+.nudge-step-setting select{min-width:100px;min-height:40px;padding:6px;border:1px solid #3a475a;border-radius:6px;background:#202b3a;color:#d6e3f7;font:inherit}
+@media(max-width:360px){.video-tracks .compact-toolbar .track-nudge[data-fine=true]{font-size:10px}}

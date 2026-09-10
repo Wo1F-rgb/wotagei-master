@@ -11,7 +11,7 @@ import {fitBeatGrid,type BeatGrid} from './beat-grid';
 import {YouTubeMedia,type YouTubeLink} from './youtube';
 import {resolveYouTubeRate} from './youtube-rate';
 import {MIN_PRACTICE_RATE,MAX_PRACTICE_RATE} from './practice-rate';
-import {nudgeFollower,type NudgeResult} from './manual-timing';
+import {nudgeFollower,NUDGE_SECONDS,NUDGE_STEP_KEY,restoreNudgeStep,type NudgeResult} from './manual-timing';
 import {rememberFile,rememberLink,historyError} from './recent-media';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
@@ -29,6 +29,9 @@ export function useStudio(){
  const [rate,setRateState]=useState(1), [time,setTime]=useState(0), [selfTime,setSelfTime]=useState(0);
  const [playing,setPlaying]=useState(false), [buffering,setBuffering]=useState(false),[preparing,setPreparing]=useState(false);
  const [soundSource,setSoundSource]=useState<0|1>(0),soundChoice=useRef<0|1>(0);
+ const [nudgeStep,setNudgeStepState]=useState(NUDGE_SECONDS),nudgeStepChoice=useRef(NUDGE_SECONDS);
+ useEffect(()=>{try{const saved=restoreNudgeStep(Number(localStorage.getItem(NUDGE_STEP_KEY)));nudgeStepChoice.current=saved;setNudgeStepState(saved);}catch{}},[]);
+ function setNudgeStep(value:number){const next=restoreNudgeStep(value);nudgeStepChoice.current=next;setNudgeStepState(next);try{localStorage.setItem(NUDGE_STEP_KEY,String(next));}catch{setNotice('ずらし量は変更しましたが、この端末に保存できませんでした。');}}
  const [beatPreview,setBeatPreview]=useState<number|null>(null),previewCue=useRef<number|null>(null);
  const cueNodes=useRef(new Set<OscillatorNode>()),cueKey=useRef(''),cueLast=useRef(-1),cueTime=useRef<number|null>(null),followerBeforeStart=useRef(false);
  const [soloPlaying,setSoloPlaying]=useState<number|null>(null), [tapCounts,setTapCounts]=useState([0,0]);
@@ -85,13 +88,13 @@ export function useStudio(){
   let pendingTime:number|undefined;
   if(index===0&&youtubeActive.current&&youtube.current&&self.current){
    // The iframe clock can still report its old position after seekTo(). Project only
-   // when the user taps, so a burst accumulates every 1 ms step without chasing playback.
+   // when the user taps, so a burst accumulates every step without chasing playback.
    const masterTime=self.current.currentTime,media=youtube.current;
    if(youtubeNudge.current?.media!==media)youtubeNudge.current={media,masterTime,time:media.currentTime,origin:c.origins[0]};
    const base=youtubeNudge.current;
    pendingTime=base.time+(masterTime-base.masterTime)*c.bpm[1]/c.bpm[0]+c.origins[0]-base.origin;
   }
-  const result=nudgeFollower([referenceMedia(),self.current],c.origins,soundChoice.current,direction,pendingTime);
+  const result=nudgeFollower([referenceMedia(),self.current],c.origins,soundChoice.current,direction,pendingTime,nudgeStepChoice.current);
   if(result.delta&&result.origin!==undefined){const next=c.origins.map((v,i)=>i===index?result.origin!:v);snapshot.current={...c,origins:next};setOrigins(next);if(index===0)setTime(result.time!);else setSelfTime(result.time!);persistSettings(true);}
   return result;
  }
@@ -332,5 +335,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {nudgeStep,setNudgeStep,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }

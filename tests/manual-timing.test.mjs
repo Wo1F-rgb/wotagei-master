@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nudgeFollower} from '../lib/manual-timing.ts';
+import {nudgeFollower,NUDGE_STEPS,restoreNudgeStep,nudgeSecondsLabel} from '../lib/manual-timing.ts';
 import {comparisonRates,mapSelfTime} from '../lib/rhythm.ts';
 
 function player(time=10,duration=60){let position=time;const seeks=[];return {seeks,duration,get currentTime(){return position;},set currentTime(value){seeks.push(value);position=value;},pause(){assert.fail('Manual nudges must not pause playback');},play(){assert.fail('Manual nudges must not restart playback');}};}
@@ -64,4 +64,34 @@ test('an iframe with a stale clock can accumulate rapid taps from a projected pe
   const result=nudgeFollower([iframe,master],origins,1,-1,pending);origins[0]=result.origin;
  }
  assert.equal(origins[0],2.02);assert.equal(requests.length,20);assert.ok(Math.abs(requests.at(-1)-10.02)<1e-10);assert.deepEqual(master.seeks,[]);
+});
+test('every configured step applies to either follower and reversing restores its anchor',()=>{
+ for(const step of NUDGE_STEPS)for(const master of [0,1]){
+  const media=[player(),player()],origins=[2,3],target=1-master;
+  for(const direction of [-1,1])for(let i=0;i<21;i++){
+   const result=nudgeFollower(media,origins,master,direction,undefined,step);
+   assert.equal(result.delta,-direction*step);origins[target]=result.origin;
+   if(direction===-1&&i===20)assert.equal(origins[target],Math.round(([2,3][target]+21*step)*1e6)/1e6);
+  }
+  assert.deepEqual(origins,[2,3]);assert.equal(media[target].currentTime,10);assert.deepEqual(media[master].seeks,[]);
+ }
+});
+test('half-millisecond taps accumulate with stale iframe clocks, including after a step change',()=>{
+ const requests=[],iframe={duration:60,get currentTime(){return 10;},set currentTime(value){requests.push(value);}},master=player(),origins=[2,3];
+ for(const step of [...Array(21).fill(.0005),.005,.01]){
+  const result=nudgeFollower([iframe,master],origins,1,-1,10+origins[0]-2,step);origins[0]=result.origin;
+ }
+ assert.equal(origins[0],2.0255);assert.equal(requests.at(-1),10.0255);assert.deepEqual(master.seeks,[]);
+});
+test('configured step bounds reject partial movement, including sub-millisecond steps',()=>{
+ for(const step of NUDGE_STEPS){
+  const media=[player(),player(step/2)];
+  const result=nudgeFollower(media,[1,1],0,1,undefined,step);
+  assert.equal(result.delta,0);assert.match(result.reason,/変更なし/);assert.deepEqual(media[1].seeks,[]);
+ }
+});
+test('stored steps restore only supported values and labels preserve half milliseconds',()=>{
+ for(const step of NUDGE_STEPS){assert.equal(restoreNudgeStep(step),step);assert.equal(Number(nudgeSecondsLabel(step)),step);}
+ for(const invalid of [null,undefined,NaN,Infinity,-.001,0,.00001,10,'oops','.0005',{}])assert.equal(restoreNudgeStep(invalid),.001);
+ assert.equal(nudgeSecondsLabel(.0005),'0.0005');assert.equal(nudgeSecondsLabel(.001),'0.001');
 });
