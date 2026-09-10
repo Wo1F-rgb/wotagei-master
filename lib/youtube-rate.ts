@@ -1,4 +1,5 @@
 import {comparisonRates} from './rhythm.ts';
+import {MIN_PRACTICE_RATE,MAX_PRACTICE_RATE} from './practice-rate.ts';
 
 type RateMedia={playbackRate:number;confirmedPlaybackRate?:number;rates:number[]};
 export function closestYouTubeRate(available:number[],referenceBpm:number,selfBpm:number,sound:0|1,preferred=1){
@@ -6,7 +7,7 @@ export function closestYouTubeRate(available:number[],referenceBpm:number,selfBp
  return available.filter(n=>Number.isFinite(n)&&n>0).map(reference=>{
   const rate=reference*(sound===1?referenceBpm/selfBpm:1);
   return {rate,...comparisonRates(rate,referenceBpm,selfBpm,sound),reference};
- }).filter(v=>v.rate>=.25&&v.rate<=2&&v.reference>=.25&&v.reference<=4&&v.self>=.25&&v.self<=4)
+ }).filter(v=>v.rate>=MIN_PRACTICE_RATE&&v.rate<=MAX_PRACTICE_RATE&&v.reference>=.25&&v.reference<=4&&v.self>=.25&&v.self<=4)
  .sort((a,b)=>Math.abs(a.rate-preferred)-Math.abs(b.rate-preferred)||a.rate-b.rate)[0]||null;
 }
 

@@ -10,6 +10,7 @@ import {upcomingBeatCues} from './beat-cues';
 import {fitBeatGrid,type BeatGrid} from './beat-grid';
 import {YouTubeMedia,type YouTubeLink} from './youtube';
 import {resolveYouTubeRate} from './youtube-rate';
+import {MIN_PRACTICE_RATE,MAX_PRACTICE_RATE} from './practice-rate';
 import {nudgeFollower,type NudgeResult} from './manual-timing';
 import {rememberFile,rememberLink,historyError} from './recent-media';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; instance?:number };
@@ -50,7 +51,7 @@ export function useStudio(){
  const snapshot=useRef({bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,soundSource});
  useEffect(()=>{snapshot.current={bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,soundSource};});
  function setRate(value:number){
-  if(!Number.isFinite(value)||value<.25||value>2)return;
+  if(!Number.isFinite(value)||value<MIN_PRACTICE_RATE||value>MAX_PRACTICE_RATE)return;
   if(youtubeActive.current)pause();
   snapshot.current={...snapshot.current,rate:value};setRateState(value);
  }
@@ -84,7 +85,7 @@ export function useStudio(){
   let pendingTime:number|undefined;
   if(index===0&&youtubeActive.current&&youtube.current&&self.current){
    // The iframe clock can still report its old position after seekTo(). Project only
-   // when the user taps, so a burst accumulates every 5 ms step without chasing playback.
+   // when the user taps, so a burst accumulates every 1 ms step without chasing playback.
    const masterTime=self.current.currentTime,media=youtube.current;
    if(youtubeNudge.current?.media!==media)youtubeNudge.current={media,masterTime,time:media.currentTime,origin:c.origins[0]};
    const base=youtubeNudge.current;
@@ -331,5 +332,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{cancelCues();optimization.current?.abort();lifecycle.current=false;cameraRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }
