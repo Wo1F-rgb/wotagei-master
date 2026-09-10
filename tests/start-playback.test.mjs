@@ -17,3 +17,11 @@ test('an 80ms startup lag is corrected instead of being silently accepted',async
  const r={currentTime:1,duration:20,async play(){}},s={currentTime:.92,duration:20,async play(){}};
  await startComparison(r,s,t=>t,1,()=>true);assert.equal(s.currentTime,1);
 });
+
+test('live practice starts only the reference without warmup pauses or synchronization seeks',async()=>{
+ const events=[],reference={currentTime:4,duration:30,muted:false,readyState:4,seeking:false,playbackRate:.5,addEventListener(){},pause(){events.push('pause');},async play(){events.push('play');}};
+ assert.equal(await startComparison(reference,null,()=>{throw new Error('No camera time mapping');},.5,()=>false),false);
+ assert.deepEqual(events,[]);
+ assert.equal(await startComparison(reference,null,t=>t,.5,()=>true),true);
+ assert.deepEqual(events,['play']);assert.equal(reference.currentTime,4);assert.equal(reference.playbackRate,.5);assert.equal(reference.muted,false);
+});
