@@ -13,8 +13,8 @@ import {resolveYouTubeRate} from './youtube-rate';
 import {MIN_PRACTICE_RATE,MAX_PRACTICE_RATE} from './practice-rate';
 import {nudgeFollower,NUDGE_SECONDS,NUDGE_STEP_KEY,restoreNudgeStep,type NudgeResult} from './manual-timing';
 import {rememberFile,rememberLink,historyError} from './recent-media';
-import {fetchTwitterVideo,type TwitterLink} from './twitter';
-export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterLink; instance?:number };
+import {fetchTwitterVideo,type TwitterLink,type TwitterSource} from './twitter';
+export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
 const defaultAlignment: Alignment = {x:0,y:0,scale:1,rotation:0,opacity:.5,perspectiveX:0,perspectiveY:0};
 const initialSources: (Source | null)[] = [null,null];
@@ -207,13 +207,14 @@ export function useStudio(){
   setDrift(0);setAlignment({...defaultAlignment});resetTaps(index);
   setNotice(`${index===0?'お手本':'自分'}の動画を外しました。別の動画を選べます。元のファイルと履歴は残ります。`);
  }
- function loadFile(index:number,file:File,twitter?:{link:TwitterLink;title:string}){
+ function loadFile(index:number,file:File,twitter?:{link:TwitterSource;title:string}){
   if(!file.type.startsWith('video/')&&!/\.(mp4|mov|webm|m4v)$/i.test(file.name)){setNotice('動画ファイル（MP4・MOV・WebM）を選んでください。');return;}
   if(index===0)cancelLinkLoad();
   pause();if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);}files.current[index]=file;if(index===1){resetSound();optimization.current?.abort();originalSelf.current=null;restoreTime.current=null;setOptimized(false);setQuality(null);qualityTick.current={now:0,frames:0};stopCamera();}
   const url=URL.createObjectURL(file);urls.current.add(url);
   const key=twitter?`twitter:${twitter.link.id}:${twitter.link.video}`:`${file.name}|${file.size}|${file.lastModified}`;
   const previous=sources[index];if(previous){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}
+  if(previous?.key!==key)setAlignment({...defaultAlignment});
   setSources(s=>s.map((v,i)=>i===index?{url,name:twitter?.title||file.name,key,...(twitter?{twitter:twitter.link}:{})}:v));setDurations(d=>d.map((v,i)=>i===index?0:v));
   let saved:{bpm?:number;kind?:BpmKind;origin?:number;mirror?:boolean}|null=null;
   try{saved=JSON.parse(localStorage.getItem('wotagei:video:'+key)||'null');}catch{}

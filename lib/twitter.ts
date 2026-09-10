@@ -1,5 +1,6 @@
 export type TwitterLink={id:string;url:string;video:number|null};
-export type TwitterVideo={link:TwitterLink;title:string;mediaUrl:string};
+export type TwitterSource=TwitterLink&{videos:number[]};
+export type TwitterVideo={link:TwitterSource;title:string;mediaUrl:string};
 export const MAX_TWITTER_BYTES=100*1024*1024;
 const hosts=['x.com','www.x.com','mobile.x.com','twitter.com','www.twitter.com','mobile.twitter.com'];
 export function isTwitterUrl(value:string){try{return hosts.includes(new URL(value.trim()).hostname);}catch{return false;}}
@@ -29,8 +30,16 @@ export function twitterVideoFromResponse(link:TwitterLink,data:unknown):TwitterV
  const selected=formats.filter(v=>v.bitrate!<=3_000_000).at(-1)||formats[0];
  const mediaUrl=mp4Url(selected?.url)||mp4Url(item.url);
  if(!mediaUrl)throw new Error('このX動画のMP4を取得できません。動画ファイルを選んでください。');
- const video=index+1,title=`X · @${String(post.author?.screen_name||'投稿者').slice(0,40)}${all.length>1?` · 動画${video}`:''}`;
- return {link:{id:link.id,video,url:`https://x.com/i/status/${link.id}/video/${video}`},title,mediaUrl};
+ const video=index+1;
+ const videos=all.flatMap((entry,i)=>entry&&['video','gif'].includes(entry.type||'')?[i+1]:[]);
+ const title=`X · @${String(post.author?.screen_name||'投稿者').slice(0,40)}${videos.length>1?` · 動画${videos.indexOf(video)+1}/${videos.length}`:''}`;
+ return {link:{id:link.id,video,url:`https://x.com/i/status/${link.id}/video/${video}`,videos},title,mediaUrl};
+}
+/** Use attachment indices rather than video ordinals, so photos between clips are skipped. */
+export function adjacentTwitterVideo(source:TwitterSource,direction:-1|1):TwitterLink|null{
+ const current=source.videos.indexOf(source.video??-1),video=source.videos[current+direction];
+ if(current<0||video===undefined)return null;
+ return {id:source.id,video,url:`https://x.com/i/status/${source.id}/video/${video}`};
 }
 export async function readTwitterVideo(response:Response,limit=MAX_TWITTER_BYTES):Promise<Blob>{
  if(!response.ok||!response.body)throw new Error('Xの動画を取得できません。投稿URLからもう一度読み込んでください。');

@@ -155,3 +155,11 @@
 
 .position-label{display:flex;flex-direction:column;justify-content:center;flex-shrink:0;min-width:44px;color:#b4c2d7;font:11px/12px monospace;white-space:nowrap}
 @media(orientation:portrait) and (max-height:600px){.position-label{font-size:10px;line-height:10px}}
+
+/* Keep the existing video/track layout: the post selector stays in the video header. */
+.twitter-switch{display:flex;align-items:center;align-self:stretch;flex-shrink:0;gap:2px;color:var(--deck-color);font-size:11px;font-variant-numeric:tabular-nums}
+.twitter-switch button{height:100%;width:30px;display:flex;align-items:center;justify-content:center;border:0;border-radius:4px;background:#cdfa6914;padding:0;color:inherit;transition:background .1s}
+.twitter-switch button:active{background:#cdfa6955;transform:scale(.94)}
+.twitter-switch span{white-space:nowrap;min-width:48px;text-align:center}
+.twitter-switch .twitter-switch-cancel{width:48px;background:#51442b;color:#ffe1a4;font-size:11px}
+@media(max-width:400px){.deck-header:has(.twitter-switch){gap:4px;padding-inline:6px}.deck-header:has(.twitter-switch) .deck-status{font-size:10px}}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseTwitterLink,twitterVideoFromResponse,fetchTwitterVideo,readTwitterVideo,MAX_TWITTER_BYTES} from '../lib/twitter.ts';
+import {parseTwitterLink,twitterVideoFromResponse,adjacentTwitterVideo,fetchTwitterVideo,readTwitterVideo,MAX_TWITTER_BYTES} from '../lib/twitter.ts';
 const id='2095890073031966734',link=parseTwitterLink(`https://x.com/NASA/status/${id}`);
 const url=n=>`https://video.twimg.com/amplify_video/123/vid/avc1/${n}.mp4?tag=29`;
 const video={type:'video',url:url('4k'),formats:[{url:url('4k'),codec:'h264',bitrate:25000000},{url:url('720'),codec:'h264',bitrate:2176000},{url:url('360'),codec:'h264',bitrate:832000}]};
@@ -22,6 +22,19 @@ test('unavailable, private, unrelated, no-video and hostile media responses cann
  for(const data of [null,{code:404},{code:200,status:{...payload.status,id:'20'}},{code:200,status:{...payload.status,type:'tombstone'}},{code:200,status:{...payload.status,author:{protected:true}}},{code:200,status:{...payload.status,media:{}}}])assert.throws(()=>twitterVideoFromResponse(link,data));
  for(const bad of ['https://evil.test/clip.mp4','https://video.twimg.com.evil.test/clip.mp4','http://video.twimg.com/clip.mp4','https://user:pass@video.twimg.com/clip.mp4','https://video.twimg.com/clip.m3u8'])assert.throws(()=>twitterVideoFromResponse(link,{...payload,status:{...payload.status,media:{all:[{type:'video',url:bad}]}}}));
  assert.throws(()=>twitterVideoFromResponse(link,{code:429}),/混み合/);
+});
+test('arrow navigation skips photos, preserves attachment indices, and stops at each end',()=>{
+ const mixed={...payload,status:{...payload.status,media:{all:[{type:'photo'},video,{type:'photo'},{...video,type:'gif'}]}}};
+ const first=twitterVideoFromResponse(link,mixed).link;
+ assert.deepEqual(first.videos,[2,4]);assert.equal(first.video,2);
+ assert.equal(adjacentTwitterVideo(first,-1),null);
+ const next=adjacentTwitterVideo(first,1);assert.equal(next.video,4);assert.equal(next.url,`https://x.com/i/status/${id}/video/4`);
+ const last=twitterVideoFromResponse(next,mixed).link;
+ assert.equal(twitterVideoFromResponse(next,mixed).title,'X · @NASA · 動画2/2');
+ assert.equal(adjacentTwitterVideo(last,1),null);assert.equal(adjacentTwitterVideo(last,-1).video,2);
+ assert.equal(adjacentTwitterVideo({...first,video:3},1),null);
+ const single=twitterVideoFromResponse(link,payload).link;
+ assert.equal(adjacentTwitterVideo(single,1),null);assert.equal(adjacentTwitterVideo(single,-1),null);
 });
 test('only the public post ID and its allowlisted media are requested, with no credentials',async()=>{
  const requests=[],signal=new AbortController().signal;
