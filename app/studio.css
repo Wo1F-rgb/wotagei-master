@@ -297,3 +297,76 @@
 }
 
 .recording-audio-option{display:grid;gap:5px}.recording-audio-option p{font-size:12px;color:#a7b4c8}.recording-audio-dialog{gap:12px!important}
+
+/* The same players stay mounted while the viewport and dock change shape. */
+.masthead-actions{display:flex;align-items:center;gap:5px;min-width:0;flex-shrink:0;margin-left:auto}
+.fullscreen-button{width:32px;height:32px;border:1px solid #384252;background:#1c2330;color:#c7d5e9;touch-action:manipulation}
+.fullscreen-button[aria-pressed=true]{color:var(--primary);border-color:#cdfa6980;background:#cdfa6915}
+.fullscreen-button:active{background:#465466;transform:scale(.94)}
+.studio.studio-expanded{max-width:none;padding:max(2px,env(safe-area-inset-top)) max(3px,env(safe-area-inset-right)) max(2px,env(safe-area-inset-bottom)) max(3px,env(safe-area-inset-left));gap:4px}
+.studio-expanded:not(.editing) .brand{display:none}
+.studio-expanded:not(.editing):not(.aligning){grid-template-rows:32px minmax(0,1fr) 166px}
+@media(max-width:400px){
+ .masthead .brandmark{display:none}
+ .masthead .brand h1{font-size:14px}
+ .masthead-actions{gap:4px}
+ .masthead [data-slot=tabs-trigger]{padding-inline:7px!important}
+ .masthead .private-label{display:none}
+}
+@media(orientation:landscape){
+ .studio:not(.editing):not(.aligning),.studio.has-youtube:not(.editing):not(.aligning){grid-template-columns:minmax(0,1fr) clamp(192px,25vw,300px);grid-template-rows:42px minmax(0,1fr);gap:8px}
+ .studio:not(.editing):not(.aligning)>.masthead{grid-column:1/-1;grid-row:1}
+ .studio:not(.editing):not(.aligning)>.decks{grid-column:1;grid-row:2;min-width:0}
+ .studio:not(.editing):not(.aligning)>.practice-dock{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:8px;min-width:0;overflow-y:auto;overflow-x:hidden}
+ .studio:not(.editing):not(.aligning) .practice-dock>.count-row{display:grid;grid-template-columns:1fr auto;grid-template-rows:14px 22px;gap:4px;width:100%;flex-shrink:0}
+ .studio:not(.editing):not(.aligning) .practice-dock .position-label{display:flex;flex-direction:row;gap:6px;width:auto;line-height:14px}
+ .studio:not(.editing):not(.aligning) .practice-dock .beat-cells{grid-column:1/-1;grid-row:2;gap:3px}
+ .studio:not(.editing):not(.aligning) .practice-dock .beat-cells>span{height:22px;font-size:13px}
+ .studio:not(.editing):not(.aligning) .practice-dock>.video-tracks{display:grid;grid-template-rows:63px repeat(2,22px) 20px;gap:3px;width:100%;flex-shrink:0}
+ .studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar{grid-template-columns:14px 1fr .85fr 50px;grid-template-rows:30px 30px;gap:3px}
+ .studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar>span{grid-column:1;grid-row:1}
+ .studio:not(.editing):not(.aligning) .practice-dock .track-sound{grid-row:1}
+ .studio:not(.editing):not(.aligning) .practice-dock .track-nudge{grid-column:1/3;grid-row:2}
+ .studio:not(.editing):not(.aligning) .practice-dock .track-nudge+.track-nudge{grid-column:3/5}
+ .studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar select{grid-column:4;grid-row:1}
+ .studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar button,.studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar select{height:30px;min-height:30px;font-size:12px}
+ .studio:not(.editing):not(.aligning) .practice-dock .track-row{grid-template-columns:38px minmax(0,1fr);gap:3px}
+ .studio:not(.editing):not(.aligning) .practice-dock .track-seek{gap:4px}
+ .studio:not(.editing):not(.aligning) .practice-dock .track-seek>span{font-size:10px}
+ .studio:not(.editing):not(.aligning) .practice-dock>.transport{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:36px 36px;gap:4px;width:100%;flex-shrink:0}
+ .studio:not(.editing):not(.aligning) .practice-dock .transport>.play-button{grid-column:1/-1;grid-row:1;font-size:14px}
+ .studio:not(.editing):not(.aligning) .practice-dock .transport-option{grid-row:2;min-width:0;padding:0;font-size:10px}
+ .studio:not(.editing):not(.aligning) .practice-dock .transport-option,.studio:not(.editing):not(.aligning) .practice-dock .transport>.play-button{height:36px}
+ /* In comparison too, avoid spending the smaller video column on a tool rail. */
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .deck-body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) 36px}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail{grid-column:1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:minmax(0,1fr);border:0;border-top:1px solid #344052}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-remove,.studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-camera{grid-template-columns:repeat(4,minmax(0,1fr))}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-tripod{grid-template-columns:repeat(5,minmax(0,1fr))}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail button{font-size:10px;line-height:12px;gap:1px;padding:0;border-bottom:0;border-right:1px solid #2a3341}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail button svg{width:14px;height:14px}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .deck-header{gap:4px;padding-inline:6px}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .deck-header strong{font-size:12px}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .deck-status{font-size:10px}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks:not(.overlaid){grid-template-rows:minmax(266px,1fr)}
+ .studio.studio-expanded:not(.editing):not(.aligning){grid-template-rows:32px minmax(0,1fr)}
+ .studio.has-youtube:not(.editing):not(.aligning) .notice{left:auto;right:max(12px,env(safe-area-inset-right));bottom:12px;width:calc(clamp(192px,25vw,300px) - 8px);font-size:12px}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .studio:not(.editing):not(.aligning),.studio.has-youtube:not(.editing):not(.aligning),.studio.has-youtube:not(.editing):not(.aligning):has(.decks.overlaid){grid-template-rows:32px minmax(0,1fr);gap:4px}
+ .masthead [data-slot=tabs-list]{height:30px!important}
+ .masthead [data-slot=tabs-trigger]{min-height:24px;padding-block:2px!important}
+ .studio:not(.editing):not(.aligning) .decks{gap:4px}
+ .studio:not(.editing):not(.aligning) .decks.overlaid{gap:0}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid)>.deck{grid-template-rows:24px minmax(0,1fr)}
+ .studio.has-youtube:not(.editing):not(.aligning) .decks:not(.overlaid){grid-template-rows:minmax(262px,1fr)}
+}
+@media(orientation:landscape) and (max-height:360px){
+ .studio:not(.editing):not(.aligning)>.practice-dock{padding:6px;gap:6px;justify-content:flex-start}
+ .studio:not(.editing):not(.aligning) .practice-dock>.count-row{grid-template-rows:12px 20px;gap:3px}
+ .studio:not(.editing):not(.aligning) .practice-dock .beat-cells>span{height:20px}
+ .studio:not(.editing):not(.aligning) .practice-dock>.video-tracks{grid-template-rows:59px repeat(2,20px) 18px}
+ .studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar{grid-template-rows:28px 28px}
+ .studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar button,.studio:not(.editing):not(.aligning) .practice-dock .compact-toolbar select{height:28px;min-height:28px}
+ .studio:not(.editing):not(.aligning) .practice-dock>.transport{grid-template-rows:32px 32px}
+ .studio:not(.editing):not(.aligning) .practice-dock .transport-option,.studio:not(.editing):not(.aligning) .practice-dock .transport>.play-button{height:32px}
+}

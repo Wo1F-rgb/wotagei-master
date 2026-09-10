@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { Activity, ArrowLeft, Camera, Check, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FlipHorizontal2, Layers2, Pause, Play, Repeat2, RotateCcw, Settings2, SkipBack, SkipForward, SlidersHorizontal, Square, Upload, X } from 'lucide-react';
+import { Activity, ArrowLeft, Camera, Check, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FlipHorizontal2, Layers2, Maximize, Minimize, Pause, Play, Repeat2, RotateCcw, Settings2, SkipBack, SkipForward, SlidersHorizontal, Square, Upload, X } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useStudio } from '@/lib/use-studio';
+import { useStudioFullscreen } from '@/lib/use-studio-fullscreen';
 import {RecordingAudioDialog} from '@/components/recording-audio-dialog';
 import {recordingSoundLabel} from '@/lib/recording-sound';
 import {cameraFrame,cameraFormatLabel} from '@/lib/camera-recording';
@@ -50,6 +51,7 @@ function Range({label,value,min=0,max,step=.01,onChange,disabled=false}:{label:s
 
 export default function Home(){
  const s=useStudio();const [recordingDialog,setRecordingDialog]=useState(false);
+ const fullscreen=useStudioFullscreen(s.setNotice);
  useEffect(()=>{setRecordingDialog(false);},[s.sources[0]?.url,s.camera]);
  function recordingAction(){if(s.recording||s.recordingBusy){void s.toggleRecording();return;}if(s.sources[0]?.youtube){s.clearRecordingError();setRecordingDialog(true);}else void s.toggleRecording();}
  const [mode,setMode]=useState('compare'),[config,setConfig]=useState<number|null>(null),[step,setStep]=useState<ConfigStep>('origin');
@@ -158,8 +160,8 @@ export default function Home(){
   {recentPicker(i)}
  </div>;
  const silentTapNotice=config!==null&&step==='tempo'&&/^(TAP:|毎拍)/.test(s.notice);
- return <main className={'studio '+(config!==null?'editing ':'')+(choosing?'choosing ':'')+(isYoutube?'has-youtube ':'')+(panel==='alignment'||panel==='firstBeat'?'aligning':'')+(panel==='firstBeat'?' first-beat-timing':'')}>
-  <header className="masthead"><div className="brand">{config!==null?<button className="icon-button" aria-label="練習画面に戻る" onClick={()=>closeConfig()}><ArrowLeft/></button>:<Activity className="brandmark"/>}<h1>{config!==null?`${config===0?'お手本':'自分'}の設定`:'ヲタ芸マスター'}</h1></div>{config===null?<Tabs value={mode} onValueChange={v=>{if(v==='compare')setPanel(null);setMode(String(v));}}><TabsList aria-label="動画の表示"><TabsTrigger value="compare"><Columns2/><span>比較</span></TabsTrigger><TabsTrigger value="overlay"><Layers2/><span>重ねる</span></TabsTrigger></TabsList></Tabs>:<span className="private-label">動画ごとに設定</span>}</header>
+ return <main data-fullscreen={fullscreen.mode} className={'studio '+(fullscreen.expanded?'studio-expanded ':'')+(config!==null?'editing ':'')+(choosing?'choosing ':'')+(isYoutube?'has-youtube ':'')+(panel==='alignment'||panel==='firstBeat'?'aligning':'')+(panel==='firstBeat'?' first-beat-timing':'')}>
+  <header className="masthead"><div className="brand">{config!==null?<button className="icon-button" aria-label="練習画面に戻る" onClick={()=>closeConfig()}><ArrowLeft/></button>:<Activity className="brandmark"/>}<h1>{config!==null?`${config===0?'お手本':'自分'}の設定`:'ヲタ芸マスター'}</h1></div><div className="masthead-actions">{config===null?<Tabs value={mode} onValueChange={v=>{if(v==='compare')setPanel(null);setMode(String(v));}}><TabsList aria-label="動画の表示"><TabsTrigger value="compare"><Columns2/><span>比較</span></TabsTrigger><TabsTrigger value="overlay"><Layers2/><span>重ねる</span></TabsTrigger></TabsList></Tabs>:<span className="private-label">動画ごとに設定</span>}<button type="button" className="icon-button fullscreen-button" aria-label={fullscreen.expanded?'全画面を終了':'全画面にする'} title={fullscreen.expanded?'全画面を終了':'全画面にする'} aria-pressed={fullscreen.expanded} disabled={fullscreen.pending} onClick={()=>void fullscreen.toggle()}>{fullscreen.expanded?<Minimize/>:<Maximize/>}</button></div></header>
   <div className={'decks '+(overlay?'overlaid '+(s.alignmentMaster===1?'alignment-master-self ':''):'')+(overlay&&isYoutube?'youtube-overlaid ':'')+(youtubeControls?'youtube-controls-visible ':'')+(config!==null?'configuring':'')}>
    {[0,1].map(i=>{
     const source=s.sources[i],yt=i===0&&!!s.sources[0]?.youtube,live=i===1&&s.camera,selected=config===i,empty=!source&&!live,t=i===0?s.time:s.selfTime,available=!!source&&(yt?s.youtubeReady:s.durations[i]>0)&&!live;
