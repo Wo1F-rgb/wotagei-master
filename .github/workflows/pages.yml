@@ -21,6 +21,7 @@ jobs:
       - run: npm test
       - run: npm run check
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
       - run: node tests/built-worker.mjs
       - run: node tests/built-background-worker.mjs
       - run: node tests/static-output.mjs

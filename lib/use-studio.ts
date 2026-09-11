@@ -132,6 +132,16 @@ export function useStudio(){
   if(starting.current)pause();cancelCues();
   setOrigins(v=>v.map((n,i)=>i===index?clamp(value,0,c.durations[index]):n));persistSettings(true);
  }
+ function applyAnalyzedGrid(index:number,value:number,origin:number){
+  const c=snapshot.current;
+  if((index!==0&&index!==1)||!c.sources[index]||c.durations[index]<=0||!Number.isFinite(value)||value<40||value>300||!Number.isFinite(origin)||origin<0||origin>c.durations[index])return false;
+  pause();resetTaps(index);
+  const nextBpm=c.bpm.map((n,i)=>i===index?value:n),nextOrigins=c.origins.map((n,i)=>i===index?origin:n),kinds=c.bpmKinds.map((n,i)=>i===index?'analysis' as BpmKind:n);
+  // Tempo and phase belong to one analysis. Save them atomically, at full precision.
+  snapshot.current={...c,bpm:nextBpm,origins:nextOrigins,bpmKinds:kinds};setBpm(nextBpm);setOrigins(nextOrigins);setBpmKinds(kinds);if(!persistSettings(true))return false;
+  setNotice('確認したBPMと拍の位置を保存しました。踊り始めの「1」は動画に合わせて選べます。');
+  return true;
+ }
  function finishTimingEdit(save=false){
   pause();if(save)persistSettings(false);
   const c=snapshot.current,r=referenceMedia(),s=self.current;
@@ -436,5 +446,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;recordingJob.current?.abort();recordingJob.current=null;cameraRequest.current++;liveRateRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();if(recorder.current?.state==='recording')recorder.current.stop();recordingRelease.current?.();recordingAudio.current.dispose();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }
