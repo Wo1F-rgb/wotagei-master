@@ -52,7 +52,9 @@ try{
  await page.waitForFunction(()=>document.querySelector('.deck-0 video').playbackRate===.75);
  await page.keyboard.press('Escape');await page.waitForFunction(()=>document.querySelector('.deck-0 video').currentTime>1.5);
  const cameraTrack=await page.evaluate(()=>{window.__fullscreenCamera=document.querySelector('.deck-1 video').srcObject;return window.__fullscreenCamera.getVideoTracks()[0].id;});
- await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();await page.setViewportSize({width:844,height:390});await page.waitForTimeout(3500);
+ // Linux headless Chrome cannot resize its native fullscreen window. Rotate the
+ // recording first; in-fullscreen rotation is covered by built-viewer's page mode.
+ await page.setViewportSize({width:844,height:390});await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();await page.waitForTimeout(3500);
  assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
  assert.equal(await page.evaluate(()=>document.querySelector('.deck-1 video').srcObject.getVideoTracks()[0].id),cameraTrack);
  assert.equal(await page.evaluate(()=>window.__fullscreenCamera.getVideoTracks()[0].readyState),'live');
