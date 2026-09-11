@@ -29,7 +29,7 @@ export function createPoseWorker(signal:AbortSignal){
  return {ready,dispose,detect:(frame:ImageBitmap)=>request({type:'frame',frame},[frame])};
 }
 
-function videoReader(url:string,signal:AbortSignal){
+export function videoReader(url:string,signal:AbortSignal){
  const video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.setAttribute('aria-hidden','true');video.style.cssText='position:fixed;width:1px;height:1px;left:-20px;top:0;opacity:0;pointer-events:none';document.body.appendChild(video);
  let disposed=false;
  const wait=(ready:()=>boolean,action:()=>void)=>new Promise<void>((resolve,reject)=>{

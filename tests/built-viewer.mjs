@@ -89,5 +89,5 @@ try{
    await button('重ね合わせ調整').click();await page.getByRole('tab',{name:'表示',exact:true}).click();
   }
  }
- assert.deepEqual(errors,[]);console.log('Viewer verified: video-only native/fallback fullscreen, gapless frames, tap show/hide while paused and playing, seek/resume, portrait/landscape comparison + overlay, live pose toggle, gamma and persisted display settings.');
+ assert.deepEqual(errors,[]);console.log('Viewer verified: video-only native/fallback fullscreen, gapless frames, tap show/hide while paused and playing, seek/resume, portrait/landscape comparison + overlay, precomputed pose toggle, gamma and persisted display settings.');
 }finally{if(process.env.VIEW_QA_DIR){await mkdir(process.env.VIEW_QA_DIR,{recursive:true});await writeFile(resolve(process.env.VIEW_QA_DIR,'viewer-results.json'),JSON.stringify(results,null,2));}await browser?.close();await new Promise(resolve=>server.close(resolve));}

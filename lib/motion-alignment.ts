@@ -7,6 +7,11 @@ export type MotionAnalysis={samples:MotionSample[];sizes:[Size,Size];anchor:numb
 export type MotionFrame={time:number;x:number;y:number;logScale:number};
 export type MotionCurve={frames:MotionFrame[];target:0|1;accepted:number;total:number;maxGap:number};
 const limit=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
+// Position follow is an offline measurement, so a short symmetric window keeps
+// the phase centered while retaining enough high-frequency movement. Keep the
+// sampling cadence independent from these response parameters.
+const MOTION_SMOOTH_WINDOW=.4;
+const MOTION_SMOOTH_SIGMA=.2;
 const visible=(p:Point|undefined)=>!!p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&(p.visibility??0)>=.65;
 const midpoint=(p:Point[],a:number,b:number)=>({x:(p[a].x+p[b].x)/2,y:(p[a].y+p[b].y)/2});
 export const identityMotion=()=>({x:0,y:0,scale:1});
@@ -69,7 +74,7 @@ function smoothPosition(neighbors:MotionFrame[],time:number,key:'x'|'y',noiseFlo
  const center=weightedMedian(neighbors.map(v=>[v[key],1])),mad=weightedMedian(neighbors.map(v=>[Math.abs(v[key]-center),1]));
  const accepted=neighbors.filter(v=>Math.abs(v[key]-center)<=Math.max(noiseFloor,3.5*mad));
  let w=0,wt=0,wtt=0,wy=0,wty=0;
- for(const v of accepted){const t=v.time-time,weight=Math.exp(-.5*(t/.3)**2);w+=weight;wt+=weight*t;wtt+=weight*t*t;wy+=weight*v[key];wty+=weight*t*v[key];}
+ for(const v of accepted){const t=v.time-time,weight=Math.exp(-.5*(t/MOTION_SMOOTH_SIGMA)**2);w+=weight;wt+=weight*t;wtt+=weight*t*t;wy+=weight*v[key];wty+=weight*t*v[key];}
  const determinant=w*wtt-wt*wt,predicted=determinant>1e-8?(wy*wtt-wty*wt)/determinant:wy/w;
  // Local regression compensates for uneven detections without extrapolating beyond nearby motion.
  return limit(predicted,Math.min(...accepted.map(v=>v[key])),Math.max(...accepted.map(v=>v[key])));
@@ -97,7 +102,7 @@ export function buildMotionCurve(data:MotionAnalysis,options:CurveOptions):Motio
  const maxGap=Math.max(.5,data.step*2.1),groups:RawMotionFrame[][]=[];
  for(const f of raw){const group=groups.at(-1);if(!group||f.time-group.at(-1)!.time>maxGap)groups.push([f]);else group.push(f);}
  const smooth=groups.flatMap(group=>{let left=0,right=0;return group.map(frame=>{
-  const window=Math.max(.6,data.step*1.1);while(group[left].time<frame.time-window)left++;while(right<group.length&&group[right].time<=frame.time+window)right++;
+  const window=Math.max(MOTION_SMOOTH_WINDOW,data.step*1.1);while(group[left].time<frame.time-window)left++;while(right<group.length&&group[right].time<=frame.time+window)right++;
   const neighbors=group.slice(left,right),scaleNeighbors=neighbors.filter(v=>v.scaleReliable&&Math.abs(v.time-frame.time)<=Math.max(.26,data.step*1.1));
    return {time:frame.time,x:smoothPosition(neighbors,frame.time,'x',stage.width*.005),y:smoothPosition(neighbors,frame.time,'y',stage.height*.005),logScale:scaleNeighbors.length>=2?weightedMedian(scaleNeighbors.map(v=>[v.logScale,1])):0,scaleReliable:scaleNeighbors.length>=2};
  });});
