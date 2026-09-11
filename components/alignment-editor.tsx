@@ -23,8 +23,8 @@ export function AlignmentEditor({master,changeMaster,masterDisabled,manualOnly=f
   <header><strong>重ね合わせ調整</strong><button className="button mini" onClick={close}>完了</button></header>
   <div className="alignment-master-choice" role="group" aria-label="位置合わせの主役" title="位置を固定する動画を選びます。音の主役は下の「曲」で選びます。"><span>位置の主役</span>{([0,1] as const).map(i=><button key={i} className={'master-'+i} aria-label={`${i===0?'お手本':'自分'}を位置の主役にする`} aria-pressed={master===i} disabled={busy||masterDisabled} onClick={()=>changeMaster(i)}>{i===0?'お手本':'自分'}</button>)}<small>{target}を調整</small></div>
   <Tabs value={tab} onValueChange={v=>setTab(String(v))}>
-   <TabsList aria-label="位置合わせの項目"><TabsTrigger value="position">位置・濃さ</TabsTrigger>{!manualOnly&&<TabsTrigger value="background">背景</TabsTrigger>}<TabsTrigger value="camera">遠近</TabsTrigger>{!manualOnly&&<TabsTrigger value="form">フォーム差</TabsTrigger>}</TabsList>
-   {!manualOnly&&<TabsContent value="background" className="alignment-editor-body">{background}</TabsContent>}
+   <TabsList aria-label="位置合わせの項目"><TabsTrigger value="position">位置・濃さ</TabsTrigger><TabsTrigger value="background">表示</TabsTrigger><TabsTrigger value="camera">遠近</TabsTrigger>{!manualOnly&&<TabsTrigger value="form">フォーム差</TabsTrigger>}</TabsList>
+   <TabsContent value="background" className="alignment-editor-body">{background}</TabsContent>
    <TabsContent value="camera" className="alignment-editor-body">
     <p>{manualOnly?`${target}の映像の上下・左右の大きさを手動で調整します。`:'壁・窓を基準にする画角補正は、各動画の「設定 → 画角」で試せます。ここでは残った遠近差を手動で調整します。'}</p>
     {cameraFields.map(f=><div className="perspective-control" key={f.key}>

@@ -10,7 +10,7 @@ export type AnalysisSource={url:string;time:number;mirror:boolean;scene:SceneCal
 export type SubjectPreview={image:string;poses:Point[][];width:number;height:number};
 export type SequenceOptions={sources:[AnalysisSource,AnalysisSource];origins:number[];bpm:number[];stage:Size;alignment:PoseAlignment;master?:0|1;masterAlignment?:PoseAlignment;motion?:boolean};
 
-function poseWorker(signal:AbortSignal){
+export function createPoseWorker(signal:AbortSignal){
  if(typeof Worker==='undefined'||typeof OffscreenCanvas==='undefined'||typeof createImageBitmap==='undefined')throw new Error('このブラウザでは複数場面の解析を使えません。「今の1コマで合わせる」を使ってください。');
  const worker=new Worker(new URL('./pose.worker.ts',import.meta.url));
  let pending:{resolve:(value:Point[][])=>void;reject:(e:Error)=>void}|null=null,timer:ReturnType<typeof setTimeout>|undefined,closed=false;
@@ -51,7 +51,7 @@ function videoReader(url:string,signal:AbortSignal){
 
 /** Independent muted decoders leave the visible players' positions, rates and sound untouched. */
 export async function preparePoseAnalysis(options:SequenceOptions,signal:AbortSignal){
- check(signal);const worker=poseWorker(signal),readers=options.sources.map(s=>videoReader(s.url,signal));
+ check(signal);const worker=createPoseWorker(signal),readers=options.sources.map(s=>videoReader(s.url,signal));
  const dispose=()=>{worker.dispose();readers.forEach(r=>r.dispose());};
  try{
   await Promise.all([worker.ready,...readers.map(r=>r.ready)]);check(signal);

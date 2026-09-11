@@ -51,6 +51,12 @@ try{
  await button('練習速度と鳴らす音を設定').click();await page.getByLabel('練習速度（詳細）',{exact:true}).fill('0.75');await page.getByLabel('練習速度（詳細）',{exact:true}).press('Tab');
  await page.waitForFunction(()=>document.querySelector('.deck-0 video').playbackRate===.75);
  await page.keyboard.press('Escape');await page.waitForFunction(()=>document.querySelector('.deck-0 video').currentTime>1.5);
+ const cameraTrack=await page.evaluate(()=>{window.__fullscreenCamera=document.querySelector('.deck-1 video').srcObject;return window.__fullscreenCamera.getVideoTracks()[0].id;});
+ await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();await page.setViewportSize({width:844,height:390});await page.waitForTimeout(3500);
+ assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
+ assert.equal(await page.evaluate(()=>document.querySelector('.deck-1 video').srcObject.getVideoTracks()[0].id),cameraTrack);
+ assert.equal(await page.evaluate(()=>window.__fullscreenCamera.getVideoTracks()[0].readyState),'live');
+ await button('再生コントロールを表示').click({position:{x:100,y:100}});await button('全画面を終了').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});await page.setViewportSize({width:390,height:700});
  await button('録画停止').click();await page.getByRole('link',{name:'録画を保存',exact:true}).waitFor();await dismiss();
  const recorded=await page.getByRole('link',{name:'録画を保存',exact:true}).getAttribute('href');
  const dimensions=await page.evaluate(async url=>{const blob=await fetch(url).then(r=>r.blob());const v=document.createElement('video');v.muted=true;v.src=url;await new Promise((resolve,reject)=>{v.onloadeddata=resolve;v.onerror=reject;});const frame=new Promise(resolve=>v.requestVideoFrameCallback(resolve));await v.play();await frame;v.pause();const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext('2d');ctx.drawImage(v,0,0);const pixel=Array.from(ctx.getImageData(640,600,1,1).data);return {width:v.videoWidth,height:v.videoHeight,bytes:blob.size,pixel};},recorded);

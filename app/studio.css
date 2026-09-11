@@ -377,3 +377,20 @@
 }
 
 .camera-choices{display:flex;gap:6px;min-width:0}.camera-choices .button{flex:1;min-width:0;justify-content:center;min-height:32px;padding:4px 6px;font-size:13px}.camera-choices .button[aria-pressed=true]{color:var(--deck-color,#b8a1ff);border-color:currentColor}.tool-rail button.camera-switch{font-size:10px}
+.video-grade-definitions{position:absolute;pointer-events:none;overflow:hidden}
+.with-preview .pose-overlay{height:calc(100% - 62px)}
+.appearance-controls{display:flex;flex-direction:column;gap:12px}.appearance-controls>label:not(.setting-row){display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px}.appearance-controls input[type=range]{grid-column:1/-1;width:100%;min-height:28px;accent-color:var(--deck-color,var(--primary));touch-action:pan-y}.appearance-controls output{font:13px monospace;color:#d8e5f5}
+.overlay-appearance-presets{display:flex;flex-direction:column;gap:10px}.overlay-appearance-presets>div{display:flex;gap:6px}.overlay-appearance-presets button{flex:1;padding-inline:6px;min-width:0;font-size:12px}.skeleton-choices [aria-pressed=true]{border-color:var(--primary);color:var(--primary)}.skeleton-status{top:auto;bottom:7px;pointer-events:none;max-width:calc(100% - 14px);font-size:11px}.with-preview .skeleton-status{bottom:68px}.pose-overlay{filter:drop-shadow(0 1px 2px #000);overflow:hidden}
+/* Video-only presentation: preserve the mounted media and the same transforms. */
+.studio.studio-immersive{position:fixed;inset:0;display:block!important;width:100%;height:100dvh;max-width:none;padding:0!important;margin:0;gap:0!important;background:#000;z-index:30}
+.studio-immersive>.masthead,.studio-immersive>.practice-dock,.studio-immersive>.config-dock,.studio-immersive>.alignment-editor,.studio-immersive>.notice{display:none!important}
+.studio.studio-immersive .decks{position:relative;width:100%;height:100%;display:grid;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:repeat(2,minmax(0,1fr))!important;gap:2px!important;border:0;border-radius:0;background:#000;overflow:hidden}
+.studio.studio-immersive .deck{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important;border:0;border-radius:0;background:#000}
+.studio.studio-immersive .deck-body{grid-column:1!important;grid-row:1!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important}
+.studio-immersive .deck-header,.studio-immersive .tool-rail,.studio-immersive .stage-badge,.studio-immersive .camera-recording-frame,.studio-immersive .preview-tools,.studio-immersive .alignment-gestures{display:none!important}
+.studio.studio-immersive .video-stage{grid-column:1!important;grid-row:1!important;background:#000}
+.studio.studio-immersive .decks.overlaid{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr)!important;gap:0!important}
+.studio.studio-immersive .overlaid .deck,.studio.studio-immersive .overlaid .deck-body{display:contents}
+.studio.studio-immersive .overlaid .deck-1 .video-stage,.studio.studio-immersive .overlaid.alignment-master-self .deck-0 .video-stage{background:transparent}
+.studio.studio-immersive .overlaid.alignment-master-self .deck-1 .video-stage{background:#000}
+@media(orientation:landscape){.studio.studio-immersive .decks:not(.overlaid){grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-template-rows:minmax(0,1fr)!important}}
