@@ -54,7 +54,15 @@ export function recentStore(factory:IDBFactory,name=DB_NAME){
 function browserStore(){if(typeof indexedDB==='undefined')throw new Error('このブラウザでは動画履歴を保存できません。');return recentStore(indexedDB);}
 export const getRecentMedia=()=>browserStore().list();
 export const getRecentFile=(id:string)=>browserStore().getFile(id);
-export const deleteRecentMedia=(id:string)=>browserStore().remove(id);
-export const clearRecentMedia=()=>browserStore().clear();
+export async function deleteRecentMedia(id:string){
+ await browserStore().remove(id);
+ if(id.startsWith('file:'))await rhythmHistory().remove(id.slice(5));
+ else if(id.startsWith('youtube:')){let link;try{link=parseYouTubeLink(id.slice(8));}catch{return;}await rhythmHistory().remove('youtube:'+link.id);}
+ else if(id.startsWith('link:')){let link;try{link=parseTwitterLink(id.slice(5));}catch{return;}await rhythmHistory().removeMatching(key=>key.startsWith(`twitter:${link.id}:`));}
+}
+export async function clearRecentMedia(){await browserStore().clear();await rhythmHistory().clear();}
 export async function rememberFile(file:File){if(!historyEnabled())return;await browserStore().saveFile(file);window.dispatchEvent(new Event('wotagei-history'));}
 export async function rememberLink(url:string,kind:'youtube'|'link',title?:string){if(!historyEnabled())return;await browserStore().saveLink(url,kind,title);window.dispatchEvent(new Event('wotagei-history'));}
+import {rhythmHistory} from './rhythm-history.ts';
+import {parseYouTubeLink} from './youtube.ts';
+import {parseTwitterLink} from './twitter.ts';

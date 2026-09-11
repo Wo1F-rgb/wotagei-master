@@ -191,7 +191,7 @@ export function useStudio(){
   if(!r||!sources[0]||(!youtubeActive.current&&durations[0]<=0)){setNotice('先にお手本の動画を読み込んでください。');return;}
   const rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current),sr=rates.self;
   if(sources[1]&&!camera&&durations[1]<=0){setNotice('自分の動画の読み込みが終わってから再生してください。');return;}
-  if(!camera&&(bpmKinds[0]==='unset'||(sources[1]&&bpmKinds[1]==='unset'))){setNotice('各動画の「設定 → 拍・BPM」で拍タップ・解析・曲選択・手入力のいずれかを行ってください。');return;}
+  if(!camera&&(bpmKinds[0]==='unset'||(sources[1]&&bpmKinds[1]==='unset'))){setNotice('各動画の「設定 → 拍・BPM」で拍タップ・自動解析のいずれかを行ってください。');return;}
   if(!youtubeActive.current&&(rates.reference<.25||rates.reference>4||(sources[1]&&!camera&&(sr<.25||sr>4)))){setNotice('動画の速度が対応範囲（0.25〜4倍）を超えています。BPMか練習速度を調整してください。');return;}
   if(loop.enabled&&(loop.end-loop.start<.1)){setNotice('ループの終点は始点より後にしてください。');return;}
   const id=++playRequest.current;starting.current=true;running.current=false;setPreparing(true);
@@ -282,7 +282,7 @@ export function useStudio(){
   const display=restoreVideoDisplay(saved);setMirrors(v=>v.map((n,i)=>i===index?display.mirror:n));setTripods(v=>v.map((n,i)=>i===index?display.tripod:n));
   if(index===0){setTime(0);setRate(1);setLoop({enabled:false,start:0,end:0});}else{setSelfTime(0);}
   void (twitter?rememberLink(twitter.link.url,'link',twitter.title):rememberFile(file)).catch(e=>{if(lifecycle.current&&files.current[index]===file)setNotice(historyError(e));});
-  resetTaps(index);setNotice(restored.kind!=='unset'?'保存済みのBPMと「1」を復元しました。':'BPMは未設定です。横の「設定 → 拍・BPM」から拍タップ・解析・曲選択・手入力ができます。');
+  resetTaps(index);setNotice(restored.kind!=='unset'?'保存済みのBPMと「1」を復元しました。':'BPMは未設定です。横の「設定 → 拍・BPM」から拍タップ・自動解析ができます。');
  }
  function saveSettings(){persistSettings(false);}
  function persistSettings(quiet:boolean){

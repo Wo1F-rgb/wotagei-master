@@ -21,6 +21,6 @@ export function RecentMediaPicker({index,loadFile,loadLink,disabled,pause}:Props
  {error&&<p className="warning" role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
  <p className="config-hint">動画・URLを合わせて最近10件を保存します。11件目から古い履歴を入れ替えます。動画は合計1GB・1本500MBまで。ブラウザのデータ削除や空き容量不足で消える場合があります。元動画は写真アプリなどにも残してください。別端末とは同期しません。</p>
  <div className="source-actions"><button className="button" onClick={()=>void(async()=>{try{const granted=await navigator.storage?.persist?.();setMessage(granted?'このブラウザで保存領域の保護が有効です。':'保存領域の保護は許可されませんでした。通常の保存は使えます。');}catch{setMessage('このブラウザでは保存領域を保護できません。');}})()}>保存領域を保護</button>{items.length>0&&!clearConfirm&&<button className="button" onClick={()=>setClearConfirm(true)}>履歴をすべて削除</button>}{clearConfirm&&<><button className="button" disabled={busy} onClick={()=>void remove()}>全履歴を削除する</button><button className="button" onClick={()=>setClearConfirm(false)}>やめる</button></>}</div>
- <p className="config-hint">削除するのはこのアプリ内のコピーです。写真アプリの元動画は削除しません。履歴をOFFにしても既存の履歴は残ります。</p>
+ <p className="config-hint">削除するのはこのアプリ内のコピーと解析履歴です。写真アプリの元動画は削除しません。履歴をOFFにしても既存の履歴は残ります。</p>
  </DialogContent></Dialog></>;
 }

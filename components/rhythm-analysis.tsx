@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeRhythmFile } from '@/lib/analyze-rhythm-file';
 import type { AnalyzedGrid, RhythmAnalysisResult } from '@/lib/analyzed-grid';
+import {rhythmHistory, type RhythmHistoryEntry} from '@/lib/rhythm-history';
+import {historyEnabled} from '@/lib/recent-media';
 import './rhythm-analysis.css';
 
 type SourceKind = 'video' | 'audio';
 
 type Props = {
+  mediaKey: string;
   mainPlaying: boolean;
   file: File | null;
   remote: boolean;
@@ -103,19 +106,30 @@ function getAudioContext() {
   return new Context();
 }
 
-export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
-  const [source, setSource] = useState<SourceKind>(file ? 'video' : 'audio');
-  const [audioFile, setAudioFile] = useState<File | null>(null);
+function restoredAudio(entry: RhythmHistoryEntry | null) {
+  return entry?.audio ? new File([entry.audio.blob], entry.audio.name, {type:entry.audio.blob.type, lastModified:entry.audio.lastModified}) : null;
+}
+
+export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
+  const initial = useRef(mediaKey ? rhythmHistory().peek(mediaKey) : null).current;
+  const [historyReady, setHistoryReady] = useState(Boolean(initial) || !mediaKey);
+  const [historyMessage, setHistoryMessage] = useState(initial ? '前回の解析結果と調整内容を復元しました。' : '');
+  const [source, setSource] = useState<SourceKind>(initial?.source ?? (file ? 'video' : 'audio'));
+  const [audioFile, setAudioFile] = useState<File | null>(() => restoredAudio(initial));
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [result, setResult] = useState<RhythmAnalysisResult | null>(null);
-  const [bpmText, setBpmText] = useState('');
-  const [originText, setOriginText] = useState('');
-  const [position, setPosition] = useState(0);
+  const [audioInputFile, setAudioInputFile] = useState<File | null>(null);
+  const [result, setResult] = useState<RhythmAnalysisResult | null>(initial?.result ?? null);
+  const [bpmText, setBpmText] = useState(initial?.bpmText ?? '');
+  const [originText, setOriginText] = useState(initial?.originText ?? '');
+  const [position, setPosition] = useState(initial?.position ?? 0);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [hasStarted, setHasStarted] = useState(false);
+  const [hasStarted, setHasStarted] = useState(Boolean(initial));
+  const resumePosition = useRef(initial?.position ?? 0);
+  const historyDraft = useRef<RhythmHistoryEntry | null>(initial);
+  const historyWrite = useRef(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -128,6 +142,10 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
   const resultRef = useRef<HTMLDivElement | null>(null);
   const pauseRef = useRef(pause);
   const activeFile = source === 'video' ? file : audioFile;
+  if (historyReady && result && mediaKey) historyDraft.current = {
+    key: mediaKey, source, result, bpmText, originText, position: clamp(position, 0, result.duration),
+    audio: source === 'audio' && audioFile ? {blob: audioFile, name: audioFile.name, lastModified: audioFile.lastModified} : null,
+  };
 
   useEffect(() => {
     pauseRef.current = pause;
@@ -195,35 +213,64 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
     setHasStarted(false);
   }, []);
 
-  // A new imported video is a new time base. Drop a previously selected
-  // soundtrack so its offset cannot accidentally be applied to that video.
+  // The parent keys this component by the original video identity, not its slot
+  // or temporary object URL. Restoring history never applies settings or plays.
   useEffect(() => {
-    pauseRef.current();
-    stopPreview(true);
-    resetAnalysis();
-    setAudioFile(null);
-    setSource(file ? 'video' : 'audio');
-    setPosition(0);
-  }, [file, resetAnalysis, stopPreview]);
+    if (initial || !mediaKey) return;
+    let current = true;
+    void rhythmHistory().load(mediaKey).then(entry => {
+      if (!current) return;
+      if (entry) {
+        setSource(entry.source); setAudioFile(restoredAudio(entry));
+        setResult(entry.result); setBpmText(entry.bpmText); setOriginText(entry.originText);
+        resumePosition.current = entry.position; setPosition(entry.position); setHasStarted(true);
+        setHistoryMessage('前回の解析結果と調整内容を復元しました。');
+      }
+      setHistoryReady(true);
+    }).catch(() => {
+      if (current) { setHistoryReady(true); setHistoryMessage('前回の解析結果を読み出せませんでした。再解析はできます。'); }
+    });
+    return () => { current = false; };
+  }, [initial, mediaKey]);
+
+  useEffect(() => {
+    if (!historyReady || !result || !historyDraft.current) return;
+    const write = ++historyWrite.current, persistent = historyEnabled();
+    void rhythmHistory().save(historyDraft.current, persistent).then(saved => {
+      if (!mountedRef.current || write !== historyWrite.current) return;
+      setHistoryMessage(saved ? '解析結果と調整内容をこの端末に保存しました。'
+        : persistent ? '端末への保存に失敗しました。解析結果はこのタブを閉じるまで保持します。'
+          : '履歴保存がOFFのため、解析結果はこのタブ内で保持します。');
+    });
+  }, [historyReady, result, bpmText, originText, source, audioFile, mediaKey]);
+
+  useEffect(() => {
+    // Flush the current preview position too, including navigation immediately
+    // after a nudge. Failed/unfinished re-analysis never replaces a good result.
+    const flush = () => { if (historyDraft.current) void rhythmHistory().save(historyDraft.current, historyEnabled()); };
+    window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('pagehide', flush); flush(); };
+  }, []);
+
+  useEffect(() => {
+    if (playing || !historyReady || !result) return;
+    const timer = setTimeout(() => { if (historyDraft.current) void rhythmHistory().save(historyDraft.current, historyEnabled()); }, 250);
+    return () => clearTimeout(timer);
+  }, [playing, position, historyReady, result]);
 
   useEffect(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
     setBusy(false);
     stopPreview(true);
-    setResult(null);
-    setBpmText('');
-    setOriginText('');
-    setMessage('');
-    setError('');
-    setHasStarted(false);
-    setPosition(0);
     if (!activeFile) {
       setAudioUrl(null);
+      setAudioInputFile(null);
       return undefined;
     }
     const url = URL.createObjectURL(activeFile);
     setAudioUrl(url);
+    setAudioInputFile(activeFile);
     return () => {
       stopPreview(true);
       URL.revokeObjectURL(url);
@@ -242,13 +289,6 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
   }, [stopPreview]);
 
   useEffect(() => {
-    const grid = result?.grid;
-    if (!grid) return;
-    if (finite(grid.bpm)) setBpmText(String(grid.bpm));
-    if (finite(grid.origin)) setOriginText(String(grid.origin));
-  }, [result]);
-
-  useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     const update = () => setPosition(finite(audio.currentTime) ? audio.currentTime : 0);
@@ -259,14 +299,20 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
       update();
     };
     audio.addEventListener('timeupdate', update);
-    audio.addEventListener('loadedmetadata', update);
+    const loaded = () => {
+      if (audioInputFile !== activeFile) return;
+      if (resumePosition.current > 0 && finite(audio.duration)) audio.currentTime = clamp(resumePosition.current, 0, audio.duration);
+      resumePosition.current = 0; update();
+    };
+    audio.addEventListener('loadedmetadata', loaded);
     audio.addEventListener('ended', ended);
+    if (audio.readyState >= 1) loaded();
     return () => {
       audio.removeEventListener('timeupdate', update);
-      audio.removeEventListener('loadedmetadata', update);
+      audio.removeEventListener('loadedmetadata', loaded);
       audio.removeEventListener('ended', ended);
     };
-  }, [audioUrl, stopClicks, stopFrame]);
+  }, [audioUrl, audioInputFile, activeFile, historyReady, stopClicks, stopFrame]);
 
   const duration = finite(result?.duration) && result.duration > 0 ? result.duration : 0;
   const grid = result?.grid ?? null;
@@ -484,6 +530,7 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
     pauseRef.current();
     stopPreview(true);
     resetAnalysis();
+    resumePosition.current = 0;
     setAudioFile(next);
     setSource('audio');
     setPosition(0);
@@ -492,7 +539,7 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
   };
 
   const startAnalysis = async () => {
-    if (!analysisInput || busy) return;
+    if (!analysisInput || busy || !historyReady) return;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -511,6 +558,7 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
       });
       if (controller.signal.aborted || !mountedRef.current) return;
       setResult(next);
+      if (next.grid) { setBpmText(String(next.grid.bpm)); setOriginText(String(next.grid.origin)); }
       if (!next.beats.length || !next.grid) {
         setMessage('拍を十分に検出できませんでした。別の音声か、手動の拍設定を試してください。');
       } else if (next.grid.variable) {
@@ -599,6 +647,9 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
         <h2>BPM・拍を音声から調べる</h2>
         <span className="rhythm-analysis__source-badge">{sourceLabel}</span>
       </div>
+      {!historyReady && <p className="rhythm-analysis__hint" role="status">前回の解析結果を確認中…</p>}
+      {historyMessage && <p className="rhythm-analysis__hint" role="status">{historyMessage}</p>}
+      {source === 'audio' && audioFile && <p className="rhythm-analysis__hint">音声：{audioFile.name}</p>}
 
       <details className="rhythm-analysis__settings" open={!result}>
         <summary>{result ? '音源を選ぶ・再解析' : '音源を選ぶ'}</summary>
@@ -609,10 +660,13 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
                 type="button"
                 className={`button mini ${source === 'video' ? 'chosen' : ''}`}
                 aria-pressed={source === 'video'}
+                disabled={!historyReady || busy}
                 onClick={() => {
+                  if (source === 'video') return;
                   pauseRef.current();
                   stopPreview(true);
                   resetAnalysis();
+                  resumePosition.current = 0; setPosition(0);
                   setSource('video');
                   setError('');
                   setMessage('動画の音声を選択しました。');
@@ -626,10 +680,13 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
                 type="button"
                 className={`button mini ${source === 'audio' ? 'chosen' : ''}`}
                 aria-pressed={source === 'audio'}
+                disabled={!historyReady || busy}
                 onClick={() => {
+                  if (source === 'audio') return;
                   pauseRef.current();
                   stopPreview(true);
                   resetAnalysis();
+                  resumePosition.current = 0; setPosition(0);
                   setSource('audio');
                   setError('');
                   setMessage('別音声を選択しました。動画と音声の時刻はずれる場合があります。');
@@ -644,7 +701,7 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
                 type="file"
                 accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac"
                 aria-label="BPM解析用の別音声を選ぶ"
-                disabled={busy}
+                disabled={busy || !historyReady}
                 onChange={(event) => {
                   const next = event.target.files?.[0];
                   event.target.value = '';
@@ -670,7 +727,7 @@ export function RhythmAnalysis({ mainPlaying, file, remote, pause, apply, applyB
           <p className="rhythm-analysis__hint">解析はこの端末内で行います。初回だけ解析用データをダウンロードします。</p>
 
           <div className="rhythm-analysis__actions">
-            <button type="button" className="button primary" disabled={!analysisInput || busy} onClick={() => void startAnalysis()}>
+            <button type="button" className="button primary" disabled={!analysisInput || busy || !historyReady} onClick={() => void startAnalysis()}>
               {busy ? '解析中…' : hasStarted ? 'もう一度解析' : '解析を開始'}
             </button>
             {busy && (
