@@ -1,12 +1,15 @@
 import {containRect} from './background.ts';
 
 export type CameraFormat='landscape'|'portrait';
+export type CameraFacing='user'|'environment';
+export const cameraFacingLabel={user:'インカメ',environment:'外カメ'};
 export const cameraFormatLabel={landscape:'横 16:9',portrait:'縦 9:16'};
 export function cameraFrame(format:CameraFormat){return format==='portrait'?{width:720,height:1280}:{width:1280,height:720};}
-export function cameraConstraints(format:CameraFormat):MediaStreamConstraints{
+export function cameraConstraints(format:CameraFormat,facing:CameraFacing='user',exact=false):MediaStreamConstraints{
  const {width,height}=cameraFrame(format);
  // Ideal constraints let Safari choose a working camera even if its current orientation differs.
- return {video:{facingMode:'user',width:{ideal:width},height:{ideal:height},aspectRatio:{ideal:width/height},frameRate:{ideal:30,max:30}},audio:false};
+ // A rear-camera request must not silently reopen the front camera on unsupported devices.
+ return {video:{facingMode:exact||facing==='environment'?{exact:facing}:facing,width:{ideal:width},height:{ideal:height},aspectRatio:{ideal:width/height},frameRate:{ideal:30,max:30}},audio:false};
 }
 
 /** Normalize only while recording. Preview stays on the original low-latency camera stream. */

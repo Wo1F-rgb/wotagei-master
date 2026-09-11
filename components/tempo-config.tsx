@@ -14,7 +14,7 @@ export function TempoConfig({mediaKey,preview,mainPlaying,remote=false,file,live
  useEffect(()=>{let current=true;if(mediaKey)void rhythmHistory().load(mediaKey).then(entry=>{if(current&&entry&&!methodChosen.current)setMode('auto');}).catch(()=>{});return()=>{current=false;};},[mediaKey]);
  useEffect(()=>setMessage(''),[file]);
  function adopt(value:number,from:BpmKind){apply(value,from);setMessage(`${value} BPMを設定しました。拍の位置は「拍の位置」で確認できます。`);}
- if(live)return <div className="tempo-config"><h2>インカメはお手本に合わせて踊る</h2><p>ライブ映像は倍速にできません。録画した動画ならBPM解析・同期ができます。</p></div>;
+ if(live)return <div className="tempo-config"><h2>カメラはお手本に合わせて踊る</h2><p>ライブ映像は倍速にできません。録画した動画ならBPM解析・同期ができます。</p></div>;
  return <div className="tempo-config">
   <div className="tempo-summary"><strong>{kind==='unset'?'BPM 未設定':`${Number(bpm.toFixed(3))} BPM`}</strong><span>{bpmLabels[kind]}</span>{kind!=='unset'&&<><button className="button mini" disabled={bpm<80} onClick={()=>adopt(bpm/2,'manual')} aria-label="設定BPMを半分にする">½</button><button className="button mini" disabled={bpm>150} onClick={()=>adopt(bpm*2,'manual')} aria-label="設定BPMを2倍にする">×2</button></>}</div>
   <Tabs value={mode} onValueChange={v=>{methodChosen.current=true;if(tapRecording)finishTap();setMode(String(v));setMessage('');}} className="tempo-methods">

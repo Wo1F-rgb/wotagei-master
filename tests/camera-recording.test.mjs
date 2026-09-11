@@ -59,3 +59,9 @@ test('unavailable frames/canvas capture fail before recording instead of silentl
  f.video.readyState=2;f.canvas.captureStream=undefined;assert.throws(()=>captureCameraFrame(f.video,'landscape'),/固定して録画/);
  assert.equal(f.frames.size,0);assert.equal(f.animations.size,0);
 });
+
+test('rear requests cannot silently fall back to a front lens; front switch is exact while initial webcam is preferred',()=>{
+ assert.deepEqual(cameraConstraints('landscape','environment').video.facingMode,{exact:'environment'});
+ assert.deepEqual(cameraConstraints('portrait','user',true).video.facingMode,{exact:'user'});
+ assert.deepEqual(cameraConstraints('portrait','environment').video.aspectRatio,{ideal:9/16});
+});

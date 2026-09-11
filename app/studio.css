@@ -54,7 +54,7 @@
 .scene-handles{position:absolute;inset:0;width:100%;height:100%;z-index:4;touch-action:none;user-select:none}.with-preview .scene-handles{height:calc(100% - 62px)}.scene-handles g{cursor:grab;outline:none}.scene-handles g:focus circle{stroke:white;stroke-width:6px}.scene-content{padding:7px 10px!important}.scene-editor{display:flex;flex-direction:column;gap:7px;min-width:0}.scene-editor .config-hint{font-size:12px!important;line-height:1.35!important}.scene-methods,.scene-actions{display:flex;gap:5px}.scene-methods .button{flex:1;min-height:30px;font-size:13px}.scene-methods button[aria-pressed=true]{color:#cdfa69;border-color:#cdfa69}.scene-ratio,.scene-strength{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px}.scene-ratio input{min-width:0;flex:1;width:80px;background:#111a28;border:1px solid #465a73;border-radius:5px;font-size:16px;padding:4px;color:#ecf3ff}.scene-ratio .button{min-height:28px;padding:3px 5px;font-size:12px}.scene-actions .button{flex:1;min-height:32px;padding:4px;font-size:12px;white-space:normal}.scene-editor details{font-size:12px;color:#adc0d9}.scene-editor summary{cursor:pointer}.scene-editor details p{margin-top:5px}
 
 .tool-rail.with-remove{grid-template-rows:repeat(4,minmax(0,1fr))}
-.tool-rail.with-camera{grid-template-rows:repeat(4,minmax(0,1fr))}
+.tool-rail.with-camera{grid-template-rows:repeat(5,minmax(0,1fr))}
 .tool-rail .camera-play{color:var(--primary)}
 .recording-save{top:auto;bottom:8px;display:flex;align-items:center;gap:5px;min-height:32px;text-decoration:none;pointer-events:auto;z-index:5}
 
@@ -214,7 +214,7 @@
 .overlaid .video-stage,.overlaid .alignment-gestures{grid-column:1/-1}
 .overlaid .tool-rail{grid-row:3;width:50%;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr);border:0;border-top:1px solid #344052;z-index:9}
 .overlaid .tool-rail.with-remove{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr)}
-.overlaid .tool-rail.with-camera{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr)}
+.overlaid .tool-rail.with-camera{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:12px minmax(0,1fr)}
 .overlaid .tool-rail.with-camera button{flex-direction:column;gap:1px}
 .overlaid .deck-0 .tool-rail{grid-column:1/-1;justify-self:start}
 .overlaid .deck-1 .tool-rail{grid-column:1/-1;justify-self:end;border-left:1px solid #344052}
@@ -257,7 +257,7 @@
  .studio.has-youtube:not(.editing):not(.aligning) .decks.youtube-overlaid{grid-template-rows:20px minmax(200px,1fr) 28px}
  .overlaid .tool-rail,.overlaid .tool-rail.with-remove{grid-template-columns:38px repeat(3,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
  .overlaid .tool-rail.with-remove{grid-template-columns:38px repeat(4,minmax(0,1fr))}
- .overlaid .tool-rail.with-camera{grid-template-columns:38px repeat(4,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
+ .overlaid .tool-rail.with-camera{grid-template-columns:38px repeat(5,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
  .overlaid .tool-rail.with-camera button{flex-direction:row;gap:2px}
  .overlaid .tool-rail-label{grid-column:1;display:grid;place-items:center;line-height:12px;background:transparent}
  .overlaid .youtube-overlay-toggle{min-height:18px!important;font-size:10px!important;padding-block:0!important}
@@ -346,7 +346,7 @@
  .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .deck-body{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) 36px}
  .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail{grid-column:1;grid-row:2;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:minmax(0,1fr);border:0;border-top:1px solid #344052}
  .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-remove,.studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-camera{grid-template-columns:repeat(4,minmax(0,1fr))}
- .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-tripod{grid-template-columns:repeat(5,minmax(0,1fr))}
+ .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-camera,.studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail.with-tripod{grid-template-columns:repeat(5,minmax(0,1fr))}
  .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail button{font-size:10px;line-height:12px;gap:1px;padding:0;border-bottom:0;border-right:1px solid #2a3341}
  .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .tool-rail button svg{width:14px;height:14px}
  .studio:not(.editing):not(.aligning) .decks:not(.overlaid) .deck-header{gap:4px;padding-inline:6px}
@@ -375,3 +375,5 @@
  .studio:not(.editing):not(.aligning) .practice-dock>.transport{grid-template-rows:32px 32px}
  .studio:not(.editing):not(.aligning) .practice-dock .transport-option,.studio:not(.editing):not(.aligning) .practice-dock .transport>.play-button{height:32px}
 }
+
+.camera-choices{display:flex;gap:6px;min-width:0}.camera-choices .button{flex:1;min-width:0;justify-content:center;min-height:32px;padding:4px 6px;font-size:13px}.camera-choices .button[aria-pressed=true]{color:var(--deck-color,#b8a1ff);border-color:currentColor}.tool-rail button.camera-switch{font-size:10px}

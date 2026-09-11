@@ -16,7 +16,7 @@ import {rememberFile,rememberLink,historyError} from './recent-media';
 import {fetchTwitterVideo,type TwitterLink,type TwitterSource} from './twitter';
 import {restoreVideoDisplay} from './video-display';
 import {PracticeRecordingAudio,recordingMime} from './practice-recording';
-import {cameraConstraints,captureCameraFrame,type CameraFormat} from './camera-recording';
+import {cameraConstraints,cameraFacingLabel,captureCameraFrame,type CameraFormat,type CameraFacing} from './camera-recording';
 import {prepareRecordingClock} from './recording-clock';
 import {requestRecordingSound,recordingSoundError,type RecordingSound} from './recording-sound';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
@@ -68,6 +68,7 @@ export function useStudio(){
  const [loop,setLoop]=useState({enabled:false,start:0,end:0});
  const [camera,setCamera]=useState(false), [cameraBusy,setCameraBusy]=useState(false), [recording,setRecording]=useState(false);
  const [cameraFormat,setCameraFormatState]=useState<CameraFormat>('landscape');
+ const [cameraFacing,setCameraFacing]=useState<CameraFacing>('user');
  function setCameraFormat(value:CameraFormat){if(!recorder.current&&!recordingJob.current&&(value==='landscape'||value==='portrait'))setCameraFormatState(value);}
  const [notice,setNotice]=useState(''), [click,setClick]=useState(false);
  const [alignments,setAlignments]=useState<[Alignment,Alignment]>([{...defaultAlignment},{...defaultAlignment}]);
@@ -290,19 +291,32 @@ export function useStudio(){
   if(!sources.some(Boolean)){setNotice('動画を読み込んでから保存してください。');return false;}
   try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i],tripod:tripods[i]}));});if(!quiet)setNotice('この端末にBPM・「1」の位置・反転・三脚設定を保存しました。次回も同じ動画を選ぶと復元されます。');return true;}catch{setNotice('設定を保存できません。ブラウザのストレージ設定をご確認ください。');return false;}
  }
- async function startCamera(){
+ async function startCamera(facing:CameraFacing=cameraFacing){
+  if(cameraBusy||recorder.current||recordingJob.current)return false;
+  const previous=stream.current?cameraFacing:null;
   resetSound();
   optimization.current?.abort();
   if(!navigator.mediaDevices?.getUserMedia){setNotice('カメラはHTTPSで開いたSafariなどの対応ブラウザで利用できます。');return;}
   pause();stopCamera();const id=++cameraRequest.current;setCameraBusy(true);
   try{
-   const input=await navigator.mediaDevices.getUserMedia(cameraConstraints(cameraFormat));
-   if(!lifecycle.current||id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return;}
-   stream.current=input;snapshot.current={...snapshot.current,camera:true};setCamera(true);setCameraBusy(false);setMirrors(v=>[v[0],false]);setTripods(v=>[v[0],true]);
-   if(self.current){self.current.muted=true;self.current.playbackRate=1;self.current.srcObject=input;await self.current.play();}
+   let input:MediaStream,restored=false;
+   try{input=await navigator.mediaDevices.getUserMedia(cameraConstraints(cameraFormat,facing,previous!==null));}
+   catch(error){
+    if(!lifecycle.current||id!==cameraRequest.current)return false;
+    if(!previous||previous===facing||(error instanceof DOMException&&error.name==='NotAllowedError'))throw error;
+    // iOS needs the old track released first. Recover it if the requested lens is unavailable.
+    input=await navigator.mediaDevices.getUserMedia(cameraConstraints(cameraFormat,previous));restored=true;
+   }
+   if(!lifecycle.current||id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return false;}
+   const actual=input.getVideoTracks()[0]?.getSettings().facingMode;
+   const chosen:CameraFacing=actual==='user'||actual==='environment'?actual:restored?previous!:facing;
+   stream.current=input;snapshot.current={...snapshot.current,camera:true};setCamera(true);setCameraFacing(chosen);setMirrors(v=>[v[0],false]);setTripods(v=>[v[0],true]);
+   if(!self.current)throw new Error('カメラの表示先がありません。');
+   self.current.muted=true;self.current.playbackRate=1;self.current.srcObject=input;await self.current.play();
    if(id!==cameraRequest.current)return false;
-   setNotice('インカメで練習できます。「再生」でお手本の曲を流し、×倍率で遅くできます。録画は別のボタンで開始・停止できます。');return true;
-  }catch(e){if(id!==cameraRequest.current)return;stopCamera();setNotice(e instanceof DOMException&&e.name==='NotAllowedError'?'カメラが許可されていません。Safariのカメラ設定から許可してください。':'カメラを起動できません。ほかのアプリで使用中でないか確認してください。');}
+   setCameraBusy(false);
+   setNotice(restored?`${cameraFacingLabel[facing]}に切り替えられなかったため、${cameraFacingLabel[chosen]}に戻しました。`:`${cameraFacingLabel[chosen]}で練習できます。「再生」でお手本の曲を流し、×倍率で遅くできます。録画は別のボタンで開始・停止できます。`);return true;
+  }catch(e){if(id!==cameraRequest.current)return false;stopCamera();setNotice(e instanceof DOMException&&e.name==='NotAllowedError'?'カメラが許可されていません。Safariのカメラ設定から許可してください。':e instanceof DOMException&&['OverconstrainedError','NotFoundError'].includes(e.name)?`${cameraFacingLabel[facing]}が見つかりません。別のカメラを選んでください。`:'カメラを起動できません。ほかのアプリで使用中でないか確認してください。');return false;}
  }
  async function beginTap(index:number){resetTaps(index);await playSolo(index);if(solo.current===index){tapSession.current=index;setTapRecording(index);setNotice('動画の1、2、3…に合わせてタップ。途中で終わっても、それまでの拍とBPMを使います。');}}
  function finishTap(){pause();}
@@ -446,5 +460,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;recordingJob.current?.abort();recordingJob.current=null;cameraRequest.current++;liveRateRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();if(recorder.current?.state==='recording')recorder.current.stop();recordingRelease.current?.();recordingAudio.current.dispose();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {cameraFacing,cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }
