@@ -13,7 +13,7 @@ export type FullscreenPlayerControlsProps={
  time:number;
  duration:number;
  help?:string;
- tracking?:{label:string;disabled:boolean;open:()=>void};
+ tracking?:{label:string;disabled:boolean;open:()=>void;toggle?:()=>void;enabled?:boolean};
  onPlay:()=>void;
  onPause:()=>void;
  onSeek:(time:number)=>void;
@@ -134,7 +134,7 @@ export function FullscreenPlayerControls({active,playing,preparing=false,time,du
     <button type="button" tabIndex={visible?0:-1} className="fullscreen-player-controls__button" aria-label="全画面を終了" onClick={onExit}><X aria-hidden="true"/></button>
    </div>
    <label className="fullscreen-player-controls__seek-label"><span className="sr-only">動画の再生位置</span><input type="range" tabIndex={visible?0:-1} min={0} max={safeDuration||1} step={.01} value={displayTime} disabled={disabled} aria-label="動画の再生位置" aria-valuetext={`${formatMediaTime(displayTime)} / ${formatMediaTime(safeDuration)}`} onClick={stopInteraction} onPointerDown={startPointerScrub} onPointerUp={endPointerScrub} onPointerCancel={endPointerScrub} onKeyDown={startKeyboardScrub} onKeyUp={endKeyboardScrub} onBlur={event=>finishScrub(scrubValue.current)} onChange={changeScrub}/></label>
-   {tracking&&<button type="button" className="fullscreen-player-controls__tracking" aria-label="位置追従を設定" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.open}>{tracking.label} · 設定</button>}
+   {tracking&&<div className="fullscreen-player-controls__tracking-row"><button type="button" className="fullscreen-player-controls__tracking" aria-label="位置追従を設定" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.open}>{tracking.label} · 設定</button>{tracking.toggle&&<button type="button" className="fullscreen-player-controls__tracking" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.toggle}>{tracking.enabled?'追従を解除':'追従を再開'}</button>}</div>}
    {help&&<p className="fullscreen-player-controls__help" role="note">{help}</p>}
   </div>
  </div>;

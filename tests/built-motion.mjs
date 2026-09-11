@@ -36,7 +36,7 @@ try{
    terminate(){this.closed=true;}
   };
  });
- await page.goto(`http://127.0.0.1:${server.address().port}${prefix}`);
+ await page.goto(process.env.APP_TEST_URL||`http://127.0.0.1:${server.address().port}${prefix}`);
  const button=name=>page.getByRole('button',{name,exact:true});
  const dismiss=async()=>{if(await button('メッセージを閉じる').count())await button('メッセージを閉じる').click();};
  const configure=input=>page.evaluate(v=>window.qaTools.configure_practice_tempo.execute(v),input);
@@ -55,22 +55,41 @@ try{
   assert.ok(samples.at(-1).time>samples[0].time+1);assert.ok(new Set(samples.map(v=>v.layers[0].transform)).size>5,mode+' position updates');assert.ok(samples.every(v=>v.layers[1].transform===''));results.push({mode,samples});
  };
  await moving('comparison');await page.getByRole('tab',{name:'重ねる',exact:true}).click();await moving('overlay');
+ // Undo removes only the added tracking transform and keeps playback/tempo/analysis intact.
+ await button('追従を解除').click();assert.ok((await layers()).every(v=>v.transform===''&&v.tracking===undefined));
+ await page.getByRole('tab',{name:'比較',exact:true}).click();await page.waitForTimeout(250);assert.ok((await layers()).every(v=>v.transform===''));
+ assert.ok((await page.evaluate(()=>window.qaTools.read_practice_state.execute({}))).playing);await button('追従を再開').click();await moving('resumed comparison');
  await page.getByRole('tab',{name:'比較',exact:true}).click();await page.setViewportSize({width:390,height:844});
  await page.evaluate(()=>{Object.defineProperty(document,'fullscreenEnabled',{configurable:true,value:false});Object.defineProperty(document.documentElement,'webkitRequestFullscreen',{configurable:true,value:undefined});});
  await button('全画面にする').click();await moving('fullscreen comparison');
  if(await button('再生コントロールを表示').count())await button('再生コントロールを表示').click({position:{x:100,y:100}});
  assert.ok((await button('位置追従を設定').textContent()).includes('位置追従'));
+ await button('追従を解除').click();assert.ok((await layers()).every(v=>v.transform===''));assert.equal(await page.locator('.studio-immersive').count(),1,'undo stays fullscreen');
+ assert.ok((await button('位置追従を設定').textContent()).includes('OFF'));await button('追従を再開').click();
  await page.setViewportSize({width:844,height:390});await moving('rotated fullscreen');
  assert.equal(await page.evaluate(()=>window.qaSeeks.length),startSeeks,'tracking and view changes do not seek');assert.equal(await page.evaluate(()=>window.qaPoseFrames),poseFrames,'no pose inference during playback');
  if(await button('再生コントロールを表示').count())await button('再生コントロールを表示').click({position:{x:100,y:100}});
  await button('位置追従を設定').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});await page.getByRole('region',{name:'重ね合わせ調整',exact:true}).waitFor();
  // Static manual corrections remain the baseline; tracking never overwrites them.
  const x=page.locator('[data-slot=slider][aria-label=左右] input[type=range]');await x.focus();await x.press('ArrowRight');const manual=await x.inputValue();assert.equal(manual,'1');
+ const strength=page.locator('.motion-strength input[type=range]');await strength.focus();await strength.press('ArrowLeft');const savedStrength=await strength.inputValue();
+ await button('追従を解除').click();assert.ok((await layers()).every(v=>v.transform===''));assert.equal(await x.inputValue(),manual);assert.equal(await strength.inputValue(),savedStrength);
+ await button('追従を再開').click();assert.equal(await x.inputValue(),manual);assert.equal(await strength.inputValue(),savedStrength);
+ await strength.focus();await strength.press('Home');await button('追従を解除').click();await button('追従を再開').click();assert.equal(await strength.inputValue(),'0','undo/redo keeps zero strength');assert.ok((await layers()).every(v=>v.transform===''));await strength.press('End');
  await button('完了').click();await page.getByRole('tab',{name:'比較',exact:true}).click();await button('お手本の三脚').click();assert.ok((await layers()).every(v=>v.transform===''));
  await button('お手本の三脚').click();await page.waitForTimeout(200);assert.equal(await page.locator('.auto-alignment-dialog').count(),0,'re-enable reuses analysis');
  await button('自分の三脚').click();await page.waitForTimeout(200);assert.equal((await layers())[1].tracking,'true','both moving defaults to reference spatial master');
  await page.getByRole('tab',{name:'重ねる',exact:true}).click();await button('重ね合わせ調整').click();assert.equal(await x.inputValue(),manual);
- await button('自分を位置の主役にする').click();assert.equal((await layers())[0].tracking,'true');await button('完了').click();
+ await button('自分を位置の主役にする').click();assert.equal((await layers())[0].tracking,'true');await button('完了').click();await dismiss();
+ await button('追従を解除').click();assert.ok((await layers()).every(v=>v.transform===''),'both moving undo clears both layers');
+ await button('お手本の三脚').click();await page.waitForTimeout(200);assert.ok((await layers()).every(v=>v.transform===''),'tripod target changes do not re-enable tracking');
+ await button('お手本の三脚').click();await dismiss();await button('追従を再開').click();await page.waitForTimeout(200);assert.equal(await page.locator('.auto-alignment-dialog').count(),0);assert.equal((await layers())[0].tracking,'true');
+ // Saving settings while disabled cannot re-enable tracking or reopen analysis, even after a seek.
+ await button('追従を解除').click();await button('お手本の設定').click();await page.getByRole('tab',{name:'拍の位置',exact:true}).click();await button('保存して戻る').click();await page.waitForTimeout(200);
+ assert.equal(await page.locator('.auto-alignment-dialog').count(),0);assert.ok((await layers()).every(v=>v.transform===''));
+ await page.locator('.deck-0 video').evaluate(v=>v.currentTime=10);await page.waitForTimeout(150);assert.ok((await layers()).every(v=>v.transform===''));
+ await configure({referenceBpm:150.5});await button('お手本の設定').click();await page.getByRole('tab',{name:'拍の位置',exact:true}).click();await button('保存して戻る').click();await page.waitForTimeout(200);assert.equal(await page.locator('.auto-alignment-dialog').count(),0,'changed BPM save while disabled never opens analysis');assert.ok((await layers()).every(v=>v.transform===''));
+ await configure({referenceBpm:150});await dismiss();await button('追従を再開').click();
  // A changed tempo invalidates sample pairing. Saving the timing page queues a new confirmation.
  await configure({referenceBpm:151});await page.waitForTimeout(150);assert.ok((await layers()).every(v=>v.transform===''));assert.equal(await page.locator('.auto-alignment-dialog').count(),0,'editing itself never interrupts with a dialog');
  await button('お手本の設定').click();await page.getByRole('tab',{name:'拍の位置',exact:true}).click();await button('保存して戻る').click();await page.locator('.auto-alignment-dialog').waitFor();await confirm();

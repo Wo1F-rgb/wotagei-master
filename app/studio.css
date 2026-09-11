@@ -282,6 +282,11 @@
 .motion-controls p{font-size:11px;line-height:1.4}
 .motion-controls .motion-strength label{margin-bottom:8px}
 .motion-badge{top:5px;left:auto;right:5px;border:1px solid #738953;color:#d7f4b2;font-size:10px;z-index:5;min-height:25px}
+.motion-badge{display:flex;gap:0;padding:0;max-width:calc(100% - 10px);flex-wrap:wrap;pointer-events:auto}
+.motion-badge button{min-height:30px;padding:4px 7px;background:transparent;border:0;color:inherit;font:inherit;touch-action:manipulation;cursor:pointer}
+.motion-badge button+button{border-left:1px solid #738953}
+.motion-badge button:active{background:#73895355}
+.motion-badge button:focus-visible{outline:2px solid #cdfa69;outline-offset:-2px}
 .tool-rail.with-tripod{grid-template-rows:repeat(5,minmax(0,1fr))}
 .tool-rail.with-tripod button{font-size:10px;gap:1px}
 .tool-rail.with-tripod button svg{width:14px;height:14px}
