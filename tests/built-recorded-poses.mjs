@@ -125,8 +125,15 @@ try{
  // source-time sample. It must not trigger any extra visible-media seek.
  await button('停止').click();
  const beforeSeek=await page.evaluate(()=>({seeks:window.qaSeeks.length,calls:window.qaPoseFrames}));
- await page.locator('.deck-0 video').evaluate(v=>{v.currentTime=5;});
- await page.waitForFunction(()=>document.querySelector('.deck-0 .pose-overlay')?.dataset.poseTime!=='');
+ // Setting currentTime queues seeking/seeked events. A nonempty pose attribute
+ // alone can still refer to the old frame before the seeking event is delivered.
+ await page.locator('.deck-0 video').evaluate(v=>new Promise(resolve=>{
+  v.addEventListener('seeked',resolve,{once:true});v.currentTime=5;
+ }));
+ await page.waitForFunction(()=>{
+  const video=document.querySelector('.deck-0 video'),pose=document.querySelector('.deck-0 .pose-overlay');
+  return video&&!video.seeking&&Math.abs(video.currentTime-5)<.01&&pose?.dataset.poseTime!==''&&Math.abs(Number(pose?.dataset.poseTime)-5)<.2;
+ });
  const afterSeek=await page.evaluate(()=>({seeks:window.qaSeeks.length,time:Number(document.querySelector('.deck-0 .pose-overlay')?.dataset.poseTime),calls:window.qaPoseFrames}));
  assert.equal(afterSeek.seeks,beforeSeek.seeks+1,'paused seek dispatches exactly its requested visible seek');
  assert.equal(afterSeek.calls,analysisCalls,'paused seek uses cached poses');

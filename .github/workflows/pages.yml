@@ -24,12 +24,12 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/audio-decode-browser.mjs
       - run: node tests/built-worker.mjs
+      - run: node tests/built-recorded-poses.mjs
       - run: node tests/built-rhythm-history.mjs
       - run: node tests/built-sync.mjs
       - run: node tests/built-camera.mjs
       - run: node tests/built-viewer.mjs
       - run: node tests/built-motion.mjs
-      - run: node tests/built-recorded-poses.mjs
       - run: node tests/built-background-worker.mjs
       - run: node tests/static-output.mjs
       - uses: actions/upload-pages-artifact@v4
