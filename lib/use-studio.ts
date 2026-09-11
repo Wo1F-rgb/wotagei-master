@@ -127,7 +127,7 @@ export function useStudio(){
   setTime(link.start);setRateState(1);setDurations(a=>[0,a[1]]);setLoop({enabled:false,start:0,end:0});resetTaps(0);
   setNotice('YouTubeを読み込みます。動画内の▶で視聴、BPMと「1」を設定すると下のボタンで同期再生できます。');
  }
- function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return;if(running.current||starting.current||solo.current!==null||tapSession.current!==null)pause();resetTaps(index);const c=snapshot.current,next=c.bpm.map((n,i)=>i===index?value:n),kinds=c.bpmKinds.map((n,i)=>i===index?kind:n);snapshot.current={...c,bpm:next,bpmKinds:kinds};setBpm(next);setBpmKinds(kinds);persistSettings(true);}
+ function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return false;if(running.current||starting.current||solo.current!==null||tapSession.current!==null)pause();resetTaps(index);const c=snapshot.current,next=c.bpm.map((n,i)=>i===index?value:n),kinds=c.bpmKinds.map((n,i)=>i===index?kind:n);snapshot.current={...c,bpm:next,bpmKinds:kinds};setBpm(next);setBpmKinds(kinds);return persistSettings(true);}
  function adjustOrigin(index:number,value:number){
   const c=snapshot.current;if(!Number.isFinite(value)||!c.sources[index]||c.durations[index]<=0)return;
   if(starting.current)pause();cancelCues();
@@ -144,13 +144,13 @@ export function useStudio(){
   return true;
  }
  function finishTimingEdit(save=false){
-  pause();if(save)persistSettings(false);
+  pause();const saved=!save||persistSettings(false);
   const c=snapshot.current,r=referenceMedia(),s=self.current;
-  if(!r||!s||c.camera||c.sources.some(v=>!v)||c.bpmKinds.some(v=>v==='unset')||c.durations.some(d=>d<=0))return;
+  if(!r||!s||c.camera||c.sources.some(v=>!v)||c.bpmKinds.some(v=>v==='unset')||c.durations.some(d=>d<=0))return saved;
   const master=soundChoice.current,media=master===0?s:r;
   const target=master===0?mapSelfTime(r.currentTime,c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]):mapSelfTime(s.currentTime,c.origins[1],c.origins[0],c.bpm[1],c.bpm[0]);
   const position=clamp(target,0,c.durations[1-master]);media.currentTime=position;
-  if(master===0)setSelfTime(position);else setTime(position);
+  if(master===0)setSelfTime(position);else setTime(position);return saved;
  }
  function nudgeTiming(direction:-1|1):NudgeResult{
   const c=snapshot.current,index=soundChoice.current===0?1:0;

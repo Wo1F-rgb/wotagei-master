@@ -1,22 +1,29 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { analyzeRhythmFile } from '@/lib/analyze-rhythm-file';
 import type { AnalyzedGrid, RhythmAnalysisResult } from '@/lib/analyzed-grid';
 import {rhythmHistory, type RhythmHistoryEntry} from '@/lib/rhythm-history';
 import {historyEnabled} from '@/lib/recent-media';
+import {fitBeatOrigin} from '@/lib/fit-beat-origin';
 import './rhythm-analysis.css';
 
 type SourceKind = 'video' | 'audio';
 
+export type RhythmAnalysisHandle = {save: () => boolean};
+
 type Props = {
+  ref?: Ref<RhythmAnalysisHandle>;
+  active: boolean;
+  savedBpm: number;
+  savedOrigin: number;
   mediaKey: string;
   mainPlaying: boolean;
   file: File | null;
   remote: boolean;
   pause: () => void;
   apply: (bpm: number, origin: number) => boolean;
-  applyBpmOnly: (bpm: number) => void;
+  applyBpmOnly: (bpm: number) => boolean;
 };
 
 const MIN_BPM = 40;
@@ -110,7 +117,7 @@ function restoredAudio(entry: RhythmHistoryEntry | null) {
   return entry?.audio ? new File([entry.audio.blob], entry.audio.name, {type:entry.audio.blob.type, lastModified:entry.audio.lastModified}) : null;
 }
 
-export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
+export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
   const initial = useRef(mediaKey ? rhythmHistory().peek(mediaKey) : null).current;
   const [historyReady, setHistoryReady] = useState(Boolean(initial) || !mediaKey);
   const [historyMessage, setHistoryMessage] = useState(initial ? '前回の解析結果と調整内容を復元しました。' : '');
@@ -131,6 +138,14 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
   const historyDraft = useRef<RhythmHistoryEntry | null>(initial);
   const historyWrite = useRef(0);
 
+  const savedValues = useRef({bpm:savedBpm,origin:savedOrigin});
+  const originDrag = useRef<{pointer:number;left:number;width:number;start:number;span:number;value:number}|null>(null);
+  // Changes from the separate beat-position tab must win over an older analysis draft.
+  useLayoutEffect(() => {
+    const previous=savedValues.current;savedValues.current={bpm:savedBpm,origin:savedOrigin};
+    if(previous.bpm!==savedBpm)setBpmText(String(savedBpm));
+    if(previous.origin!==savedOrigin)setOriginText(String(savedOrigin));
+  }, [savedBpm,savedOrigin]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
@@ -194,7 +209,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
     [closeAudioContext, stopClicks, stopFrame],
   );
 
-  useEffect(() => {if(mainPlaying) stopPreview();}, [mainPlaying, stopPreview]);
+  useEffect(() => {if(mainPlaying||!active) stopPreview();}, [mainPlaying, active, stopPreview]);
   useEffect(() => {
     const hide=()=>{if(document.hidden)stopPreview();};
     document.addEventListener('visibilitychange',hide);
@@ -319,6 +334,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
   const previewBpm = Number(bpmText);
   const previewOrigin = Number(originText);
   const validDraft =
+    bpmText.trim() !== '' && originText.trim() !== '' &&
     finite(previewBpm) &&
     previewBpm >= MIN_BPM &&
     previewBpm <= MAX_BPM &&
@@ -348,14 +364,16 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
     if (!duration || !validDraft || windowEnd <= windowStart) return [];
     const period = 60 / previewBpm;
     if (!finite(period) || period <= 0) return [];
-    const first = Math.ceil((windowStart - previewOrigin - 0.004) / period);
+    const anchor=grid?.origin;
+    if(!finite(anchor))return [];
+    const first = Math.ceil((windowStart - anchor - 0.004) / period);
     const count = Math.min(
       MAX_GRID_LINES,
-      Math.max(0, Math.floor((windowEnd - previewOrigin) / period) - first + 2),
+      Math.max(0, Math.floor((windowEnd - anchor) / period) - first + 2),
     );
     return Array.from({ length: count }, (_, offset) => {
       const index = first + offset;
-      const time = previewOrigin + index * period;
+      const time = anchor + index * period;
       return {
         index,
         time,
@@ -363,7 +381,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
         label: ((index % 8) + 8) % 8 + 1,
       };
     }).filter((line) => line.time >= windowStart && line.time <= windowEnd);
-  }, [duration, previewBpm, previewOrigin, validDraft, windowEnd, windowStart]);
+  }, [duration, previewBpm, grid?.origin, validDraft, windowEnd, windowStart]);
 
   const wavePath = useMemo(
     () => waveformPath(waveformWindow(result?.waveform ?? [], duration, windowStart, windowEnd)),
@@ -509,21 +527,13 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
     [beginFrame, duration, playing, stopClicks],
   );
 
+  const placeOrigin = (value:number) => {
+    const next=clamp(value,0,duration);setOriginText(String(next));setMessage('');setError('');return next;
+  };
   const onWaveformKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!duration) return;
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      seek(position - 1);
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      seek(position + 1);
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      seek(windowStart);
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      seek(windowEnd);
-    }
+    if (!validDraft||!duration) return;
+    const next=event.key==='ArrowLeft'?previewOrigin-.01:event.key==='ArrowRight'?previewOrigin+.01:event.key==='Home'?windowStart:event.key==='End'?windowEnd:null;
+    if(next===null)return;event.preventDefault();pauseRef.current();stopPreview();seek(placeOrigin(next));
   };
 
   const chooseAudio = (next: File) => {
@@ -557,7 +567,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
         if (mountedRef.current && !controller.signal.aborted) setMessage(progress);
       });
       if (controller.signal.aborted || !mountedRef.current) return;
-      setResult(next);
+      setResult(next);setError('');
       if (next.grid) { setBpmText(String(next.grid.bpm)); setOriginText(String(next.grid.origin)); }
       if (!next.beats.length || !next.grid) {
         setMessage('拍を十分に検出できませんでした。別の音声か、手動の拍設定を試してください。');
@@ -589,15 +599,14 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
 
   const commitBpm = () => {
     const value = Number(bpmText);
-    if (finite(value) && value >= MIN_BPM && value <= MAX_BPM) setBpmText(String(value));
-    else if (grid && finite(grid.bpm)) setBpmText(String(grid.bpm));
+    if (bpmText.trim() && finite(value) && value >= MIN_BPM && value <= MAX_BPM) setBpmText(String(value));
   };
 
   const commitOrigin = () => {
     const value = Number(originText);
-    if (finite(value) && value >= 0 && (!duration || value <= duration)) {
-      setOriginText(String(precise(value)));
-    } else if (grid && finite(grid.origin)) setOriginText(String(grid.origin));
+    if (originText.trim() && finite(value) && value >= 0 && (!duration || value <= duration)) {
+      setOriginText(String(value));
+    }
   };
 
   const adjustOrigin = (delta: number) => {
@@ -606,40 +615,36 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
     setOriginText(String(next));
   };
 
-  const markDanceOne = () => {
-    if (!result || !hasBeats || !validDraft) return;
-    // Snap to the current fitted grid, preserving any manual phase nudge.
-    // Raw detections contain timing jitter and would undo that nudge.
-    const period = 60 / previewBpm;
-    if (!finite(period) || period <= 0) return;
-    const nearestIndex = Math.round((position - previewOrigin) / period);
-    const next = previewOrigin + nearestIndex * period;
-    if (finite(next)) setOriginText(String(precise(clamp(next, 0, duration || next))));
+  const fitOrigin = () => {
+    if(!validDraft||!grid||grid.variable)return;
+    const fitted=fitBeatOrigin(previewOrigin,previewBpm,grid.origin,duration);
+    if(!fitted)return;
+    pauseRef.current();stopPreview();setError('');setOriginText(String(fitted.time));seek(fitted.time);
+    setMessage(`${fitted.kind==='beat'?'近くの拍':'拍と拍の中点'}にフィットしました。${fitted.time.toFixed(3)}秒。`);
   };
 
-  const adopt = () => {
-    const bpm = Number(bpmText);
-    const origin = Number(originText);
-    if (!automaticApplyReady || !finite(bpm) || !finite(origin)) return;
-    pauseRef.current();
-    stopPreview(true);
-    if (source === 'video' && file) {
-      if(!apply(bpm, origin)){setError('設定を保存できませんでした。動画の読み込みと端末の保存領域を確認して、もう一度お試しください。');return;}
-    }
-    else applyBpmOnly(bpm);
-    setMessage(source === 'video' && file ? 'BPMと拍の位置を設定しました。' : 'BPMだけを設定しました。別音声の時刻は動画へ移しません。');
+  const saveDraft = () => {
+    if(busy||!historyReady){setError('解析と履歴の読み込みが終わってから保存してください。');return false;}
+    if(!result)return true;
+    const bpm=Number(bpmText),origin=Number(originText);
+    if(!automaticApplyReady){setError('BPM・「1」の位置・解析結果を確認してください。安定した拍を解析できなかった場合は「手動」で設定できます。');return false;}
+    pauseRef.current();stopPreview(true);
+    const saved=source==='video'&&file?apply(bpm,origin):applyBpmOnly(bpm);
+    if(!saved){setError('設定を保存できませんでした。動画の読み込みと端末の保存領域を確認して、もう一度お試しください。');return false;}
+    setError('');return true;
   };
+  useImperativeHandle(ref,()=>({save:saveDraft}));
 
   const sourceLabel = source === 'video' && file ? '動画の音声' : '別の音声';
   const resultGrid = result?.grid;
 
   useEffect(() => {
-    if (!result || busy) return undefined;
+    if (!result || busy || !active) return undefined;
     const frame = requestAnimationFrame(() => {
       resultRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [busy, result]);
+  }, [busy, result, active]);
 
   return (
     <section className="rhythm-analysis" aria-label="BPMと拍の自動解析">
@@ -750,21 +755,28 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
           <div className="rhythm-analysis__meta">
             <span>{secondsLabel(duration)}</span>
             <span>{result.beats.length}拍を検出</span>
-            {resultGrid && gridIsUsable(resultGrid) && <strong>{resultGrid.bpm.toFixed(3)} BPM</strong>}
+            {resultGrid && gridIsUsable(resultGrid) && <strong>{(validDraft?previewBpm:resultGrid.bpm).toFixed(3)} BPM</strong>}
           </div>
           <div
             className="rhythm-analysis__waveform"
             role="slider"
             tabIndex={duration ? 0 : -1}
-            aria-label="音声の再生位置"
-            aria-valuemin={windowStart}
-            aria-valuemax={windowEnd}
-            aria-valuenow={position}
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              if (!rect.width) return;
-              seek(windowStart + ((event.clientX - rect.left) / rect.width) * windowDuration);
+            aria-label="赤線の最初の1を移動"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={validDraft?previewOrigin:0}
+            aria-valuetext={`最初の1は${previewOrigin.toFixed(3)}秒`}
+            onPointerDown={event=>{
+              if(event.button!==0||!validDraft)return;
+              const rect=event.currentTarget.getBoundingClientRect();if(!rect.width)return;
+              event.preventDefault();pauseRef.current();stopPreview();
+              const value=placeOrigin(windowStart+(event.clientX-rect.left)/rect.width*windowDuration);
+              originDrag.current={pointer:event.pointerId,left:rect.left,width:rect.width,start:windowStart,span:windowDuration,value};
+              event.currentTarget.setPointerCapture(event.pointerId);
             }}
+            onPointerMove={event=>{const d=originDrag.current;if(!d||d.pointer!==event.pointerId)return;d.value=placeOrigin(d.start+(event.clientX-d.left)/d.width*d.span);}}
+            onPointerUp={event=>{const d=originDrag.current;if(!d||d.pointer!==event.pointerId)return;originDrag.current=null;event.currentTarget.releasePointerCapture(event.pointerId);seek(d.value);}}
+            onPointerCancel={()=>{originDrag.current=null;}}
             onKeyDown={onWaveformKeyDown}
           >
             <svg viewBox="0 0 1000 144" preserveAspectRatio="none" aria-hidden="true">
@@ -775,11 +787,11 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
                 return (
                   <g key={`${line.index}-${line.time}`} className={line.accent ? 'rhythm-analysis__beat accent' : 'rhythm-analysis__beat'}>
                     <line x1={x} x2={x} y1={line.accent ? 12 : 30} y2="132" />
-                    {line.accent && <text x={x + 4} y="22">{line.label}</text>}
                   </g>
                 );
               })}
-              <line className="rhythm-analysis__playhead" x1={`${playheadPercent * 10}`} x2={`${playheadPercent * 10}`} y1="0" y2="144" />
+              {playing&&<line className="rhythm-analysis__playhead" x1={`${playheadPercent * 10}`} x2={`${playheadPercent * 10}`} y1="0" y2="144" />}
+              {validDraft&&previewOrigin>=windowStart&&previewOrigin<=windowEnd&&<g className="rhythm-analysis__origin" data-origin={originText}><line x1={(previewOrigin-windowStart)/windowDuration*1000} x2={(previewOrigin-windowStart)/windowDuration*1000} y1="0" y2="144"/><text x={(previewOrigin-windowStart)/windowDuration*1000+6} y="24">1</text></g>}
             </svg>
           </div>
           <div className="rhythm-analysis__wave-labels" aria-hidden="true">
@@ -787,9 +799,8 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
             <span>{secondsLabel(windowEnd)}</span>
           </div>
           <div className="rhythm-analysis__preview-row">
-            <button type="button" className="button mini" disabled={!audioUrl} onClick={() => seek(0)}>最初</button>
-            <button type="button" className="button mini" disabled={!audioUrl} onClick={() => seek(duration / 2)}>中間</button>
-            <button type="button" className="button mini" disabled={!audioUrl} onClick={() => seek(Math.max(0, duration - 8))}>最後</button>
+            <button type="button" className="button mini" disabled={!validDraft} onClick={()=>seek(previewOrigin)}>1へ</button>
+            <button type="button" className="button mini" disabled={!validDraft||!grid||grid.variable} onClick={fitOrigin}>フィット</button>
             <button type="button" className="button mini primary" disabled={!audioUrl} onClick={() => void togglePreview()}>
               {playing ? '停止' : '拍音で再生'}
             </button>
@@ -808,7 +819,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
             <output>{secondsLabel(position)} / {secondsLabel(duration)}</output>
           </label>
           {hasBeats && (
-            <p className="rhythm-analysis__click-note">白線は拍。「1」と「5」の拍音を高くしています。赤線は再生位置です。</p>
+            <p className="rhythm-analysis__click-note">白線＝解析した拍。赤い「1」をドラッグし、フィットで近くの拍・中点に合わせます。拍音はこの「1」から数え、1・5を高音にします。</p>
           )}
 
           {resultGrid ? (
@@ -818,17 +829,6 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
                   検出拍が一定の拍として安定しません。固定BPMの白線は途中でずれる可能性があるため、自動適用を止めています。必要なら手動の拍設定を使ってください。
                 </p>
               )}
-              <details className="rhythm-analysis__metrics">
-                <summary>解析の目安</summary>
-                <div className="rhythm-analysis__metrics-body">
-                  <div className="rhythm-analysis__grid-readout" aria-label="解析結果">
-                    <span>拍のばらつき {finite(resultGrid.errorMs) ? `${resultGrid.errorMs.toFixed(1)}ms` : '—'}</span>
-                    <span>区間差 {finite(resultGrid.driftMs) ? `${resultGrid.driftMs.toFixed(1)}ms` : '—'}</span>
-                    <span>カバー率 {finite(resultGrid.coverage) ? `${Math.round(resultGrid.coverage * 100)}%` : '—'}</span>
-                  </div>
-                  <p className="rhythm-analysis__hint">検出拍の整合性を見る目安です。音声や動画の正確さを保証する値ではありません。</p>
-                </div>
-              </details>
               {hasBeats && (
                 <div className="rhythm-analysis__fields">
                   <label className="numeric">
@@ -840,7 +840,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
                       max={MAX_BPM}
                       step="any"
                       value={bpmText}
-                      onChange={(event) => setBpmText(event.target.value)}
+                      onChange={(event) => {setBpmText(event.target.value);setError('');}}
                       onBlur={commitBpm}
                       aria-label="解析BPM"
                     />
@@ -854,7 +854,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
                       max={duration || undefined}
                       step="any"
                       value={originText}
-                      onChange={(event) => setOriginText(event.target.value)}
+                      onChange={(event) => {setOriginText(event.target.value);setError('');}}
                       onBlur={commitOrigin}
                       aria-label="1拍目の位置（秒）"
                     />
@@ -869,14 +869,7 @@ export function RhythmAnalysis({ mediaKey, mainPlaying, file, remote, pause, app
                   <button type="button" className="button mini" disabled={!validDraft} onClick={() => adjustOrigin(60 / previewBpm)}>＋1拍</button>
                 </div>
               )}
-              {hasBeats && (
-                <button type="button" className="button" disabled={!validDraft} onClick={markDanceOne}>
-                  今の再生位置を「1」にする
-                </button>
-              )}
-              <button type="button" className="button primary wide" disabled={!automaticApplyReady} onClick={adopt}>
-                {source === 'video' && file ? 'BPMと拍を使う' : 'BPMだけ使う'}
-              </button>
+              <p className="rhythm-analysis__hint">{source==='video'&&file?'下の「保存して戻る」でBPMと赤い「1」の位置を反映します。':'下の「保存して戻る」でBPMだけを反映します。別音声の「1」は動画に移しません。'}</p>
               {!automaticApplyReady && !resultGrid.variable && (
                 <p className="rhythm-analysis__hint">BPM・拍の位置・検出結果を確認すると適用できます。</p>
               )}
