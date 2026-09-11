@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
 import { Activity, ArrowLeft, Camera, Check, ChevronLeft, ChevronRight, Columns2, Download, ExternalLink, FlipHorizontal2, Layers2, Maximize, Minimize, Pause, Play, Repeat2, RotateCcw, Settings2, SkipBack, SkipForward, SlidersHorizontal, Square, SwitchCamera, Upload, X } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { useStudio } from '@/lib/use-studio';
 import { useStudioFullscreen } from '@/lib/use-studio-fullscreen';
 import {FullscreenPlayerControls} from '@/components/fullscreen-player-controls';
+import {packedVideoLayout} from '@/lib/fullscreen-layout';
 import {RecordingAudioDialog} from '@/components/recording-audio-dialog';
 import {recordingSoundLabel} from '@/lib/recording-sound';
 import {cameraFrame,cameraFormatLabel,cameraFacingLabel,type CameraFacing} from '@/lib/camera-recording';
@@ -46,6 +47,7 @@ import {SceneCalibrationEditor} from '@/components/scene-calibration';
 import {sceneCss,sceneMatrix,projectPoint,restoreScene,type SceneCalibration} from '@/lib/scene-calibration';
 
 type ConfigStep='origin'|'tempo'|'display'|'source'|'camera';
+const unalignedPair=[{x:0,y:0,scale:1,rotation:0},{x:0,y:0,scale:1,rotation:0}];
 function Numeric({label,value,onChange,min=0,max=999,step=.1,disabled=false,precision=3}:{label:string;value:number;onChange:(n:number)=>void;min?:number;max?:number;step?:number;disabled?:boolean;precision?:number}){
  const [text,setText]=useState(String(value));useEffect(()=>setText(String(Number(value.toFixed(precision)))),[value,precision]);
  const commit=()=>{if(text===String(Number(value.toFixed(precision))))return;const n=Number(text);if(text.trim()&&Number.isFinite(n)){const v=clamp(n,min,max);onChange(v);setText(String(v));}else setText(String(value));};
@@ -82,6 +84,10 @@ export default function Home(){
  const [sequence,setSequence]=useState<SequenceOptions|null>(null);
  const lastAlignmentStage=useRef<{stage:Size;key:string;reference:Size;self:Size}|null>(null);
  const poseRequest=useRef(0),selfStage=useRef<HTMLDivElement>(null);
+ const decksRef=useRef<HTMLDivElement>(null),[decksSize,setDecksSize]=useState<Size>({width:0,height:0});
+ const [videoSizes,setVideoSizes]=useState<Size[]>([{width:16,height:9},{width:16,height:9}]);
+ function readVideoSize(index:number,video:HTMLVideoElement){if(video.videoWidth&&video.videoHeight)setVideoSizes(old=>old[index].width===video.videoWidth&&old[index].height===video.videoHeight?old:old.map((size,i)=>i===index?{width:video.videoWidth,height:video.videoHeight}:size));}
+ useEffect(()=>{const el=decksRef.current;if(!el)return;const observer=new ResizeObserver(()=>setDecksSize(old=>old.width===el.clientWidth&&old.height===el.clientHeight?old:{width:el.clientWidth,height:el.clientHeight}));observer.observe(el);return()=>observer.disconnect();},[]);
  const referenceStage=useRef<HTMLDivElement>(null),[referenceStageSize,setReferenceStageSize]=useState<Size>({width:0,height:0});
  useEffect(()=>{const el=referenceStage.current;if(!el)return;const observer=new ResizeObserver(entries=>{const rect=entries[0]?.contentRect;if(rect)setReferenceStageSize({width:rect.width,height:rect.height});});observer.observe(el);return()=>observer.disconnect();},[]);
  const [stageSize,setStageSize]=useState<Size>({width:0,height:0});
@@ -109,23 +115,30 @@ export default function Home(){
  // Keep source pickers in separate decks until both videos (or the camera) are selected.
  const overlay=mode==='overlay'&&config===null&&!choosing;
  const immersive=fullscreen.expanded&&config===null&&!choosing;
+ const packed=packedVideoLayout(decksSize,[isYoutube?{width:16,height:9}:videoSizes[0],s.camera?cameraFrame(s.cameraFormat):videoSizes[1]]);
  function toggleFullscreen(){if(!fullscreen.expanded){if(config!==null)closeConfig();setPanel(null);setYoutubeControls(false);}void fullscreen.toggle();}
  const motionReference=useRef<HTMLDivElement>(null),motionSelf=useRef<HTMLDivElement>(null);
  const [motionResult,setMotionResult]=useState<{scope:string;data:MotionAnalysis}|null>(null),[motionStrength,setMotionStrength]=useState(1);
- const motionScope=JSON.stringify([s.sources.map(v=>[v?.url,v?.instance]),s.bpm,s.bpmKinds,s.origins,s.camera]);
+ const [motionPending,setMotionPending]=useState(false),motionPrompted=useRef('');
+ const motionMediaScope=JSON.stringify([s.sources.map(v=>[v?.url,v?.instance]),s.camera]);
+ const motionScope=JSON.stringify([motionMediaScope,s.bpm,s.origins]);
  const trackingTarget=motionTarget(s.tripods,s.alignmentMaster);
- const motionCurve=useMemo(()=>motionResult?.scope===motionScope&&trackingTarget!==null?buildMotionCurve(motionResult.data,{stage:stageSize,alignments:s.alignments,mirrors:s.mirrors,scenes:currentScenes,target:trackingTarget}):null,[motionResult,motionScope,trackingTarget,stageSize.width,stageSize.height,s.alignments,s.mirrors,currentScenes[0],currentScenes[1]]);
- useEffect(()=>{setMotionResult(null);},[motionScope]);
- useMotionPlayback(s.reference,[motionReference,motionSelf],motionCurve,overlay&&!isYoutube&&!s.camera&&!sequence&&!poseBusy,motionStrength);
+ const motionStage=overlay?stageSize:trackingTarget===0?referenceStageSize:stageSize;
+ const motionCurve=useMemo(()=>motionResult?.scope===motionScope&&trackingTarget!==null?buildMotionCurve(motionResult.data,{stage:motionStage,alignments:overlay?s.alignments:unalignedPair,mirrors:s.mirrors,scenes:currentScenes,target:trackingTarget}):null,[motionResult,motionScope,trackingTarget,overlay,motionStage.width,motionStage.height,s.alignments,s.mirrors,currentScenes[0],currentScenes[1]]);
+ useEffect(()=>{setMotionResult(null);motionPrompted.current='';},[motionMediaScope]);
+ useEffect(()=>{setMotionPending(s.tripods.some(v=>!v));},[motionMediaScope,s.tripods[0],s.tripods[1]]);
+ useMotionPlayback(s.reference,[motionReference,motionSelf],motionCurve,config===null&&!choosing&&!isYoutube&&!s.camera&&!sequence&&!poseBusy,motionStrength);
  const trackingWeight=motionWeightAt(motionCurve,s.time);
- const trackingLabel=motionStrength===0?'追従OFF':trackingWeight===0?'追従：検出できない場面':trackingWeight<.5?'追従を弱め中':`追従中 ${Math.round(motionStrength*100)}%`;
+ const trackingLabel=motionStrength===0?'位置追従OFF':trackingWeight===0?'位置追従：検出できない場面':trackingWeight<.5?'位置追従を弱め中':`位置追従中 ${Math.round(motionStrength*100)}%`;
  const livePoses=useLivePoses([s.reference,s.self],[appearances[0].skeleton&&!isYoutube&&!poseBusy&&!sequence&&(config===null||config===0),appearances[1].skeleton&&!poseBusy&&!sequence&&(config===null||config===1)],backgroundKeys.join('|')+'|'+s.camera);
  const motionHint=isYoutube?'追従には2本とも動画ファイルかX動画が必要です。YouTubeの映像は読み取れません。':s.camera?'追従は録画済みの動画2本で使えます。':choosing||missingBpm!==null?'先に2本の動画のBPMと拍の位置を設定してください。':!hasReference||s.durations.some(d=>d<=0)?'動画の読み込みが終わると解析できます。':'';
  const motionControls=!s.camera&&trackingTarget!==null?<MotionControls target={trackingTarget} curve={motionCurve} bothMoving={s.tripods.every(v=>!v)} strength={motionStrength} changeStrength={setMotionStrength} start={()=>startSequence(true)} disabled={s.recording||s.optimizing||poseBusy||sequence!==null} hint={motionHint}/>:undefined;
- function changeTripod(index:number){const enabled=!s.tripods[index];s.setTripod(index,enabled);s.setNotice(enabled?'三脚ON：この動画の位置を固定します。':motionHint||'三脚OFF：「重ねる → 位置 → 追従を解析」で手持ちのブレを補正できます。先にBPM・拍と基本の位置を合わせてください。');}
+ const trackingText=motionCurve?.frames.length?trackingLabel:motionHint?'位置追従の準備':motionResult?'位置追従を再解析':'位置追従を解析';
+ function openMotion(){s.pause();setMotionPending(false);if(missingBpm!==null)openConfig(missingBpm,'tempo');else if(!motionCurve?.frames.length&&!motionHint)startSequence(true);else{setMode('overlay');setPanel('alignment');}}
+ function changeTripod(index:number){const enabled=!s.tripods[index];if(!enabled)motionPrompted.current='';s.setTripod(index,enabled);s.setNotice(enabled?'三脚ON：この動画の位置を固定します。':motionHint||'三脚OFF：対象人物を確認すると位置追従を準備します。比較・重ねる・全画面で映像の位置が追従します。');}
  function applyMotionResult(data:MotionAnalysis){
   if(trackingTarget===null)throw new Error('手持ちの動画を三脚OFFにしてください。');
-  const curve=buildMotionCurve(data,{stage:stageSize,alignments:s.alignments,mirrors:s.mirrors,scenes:currentScenes,target:trackingTarget});
+  const curve=buildMotionCurve(data,{stage:motionStage,alignments:overlay?s.alignments:unalignedPair,mirrors:s.mirrors,scenes:currentScenes,target:trackingTarget});
   if(!curve.frames.length)throw new Error('同じ姿勢の肩と腰を確認できた場面が不足しています。BPMと拍、反転の向きを確認してください。');
   setMotionResult({scope:motionScope,data});setSequence(null);setPoses(null);
   s.setNotice(`${trackingTarget===0?'お手本':'自分'}の追従を準備しました（有効 ${Math.round(curve.accepted/curve.total*100)}%）。再生中は位置と倍率だけが変わります。拍・BPMを変更した場合は再解析してください。`);
@@ -142,12 +155,19 @@ export default function Home(){
   const r=s.reference.current,v=s.self.current;
   if(isYoutube||s.camera||!s.sources[0]||!s.sources[1]||!r?.videoWidth||!v?.videoWidth||sequenceHint||s.recording||s.optimizing)return;
   s.pause();poseRequest.current++;setPoseBusy(false);setPoses(null);
+  if(motion){setMotionPending(false);motionPrompted.current=motionScope+'|'+trackingTarget;}
   setSequence({sources:[{url:s.sources[0].url,time:r.currentTime,mirror:s.mirrors[0],scene:currentScenes[0]},{url:s.sources[1].url,time:v.currentTime,mirror:s.mirrors[1],scene:currentScenes[1]}],origins:[...s.origins],bpm:[...s.bpm],stage:{...stageSize},alignment:{...s.alignment},master:s.alignmentMaster,masterAlignment:{...s.alignments[s.alignmentMaster]},motion});
  }
+ useEffect(()=>{
+  if(!motionPending||config!==null||motionHint||trackingTarget===null||sequence||poseBusy||s.recording||s.optimizing||motionStage.width<=0||motionStage.height<=0)return;
+  if(motionCurve?.frames.length||motionPrompted.current===motionScope+'|'+trackingTarget){setMotionPending(false);return;}
+  let frame=0;frame=requestAnimationFrame(()=>{frame=requestAnimationFrame(()=>startSequence(true));});
+  return()=>cancelAnimationFrame(frame);
+ },[motionPending,config,motionHint,trackingTarget,sequence,poseBusy,s.recording,s.optimizing,motionCurve,motionScope,motionStage.width,motionStage.height]);
  function openFirstBeat(){s.pause();s.setNotice('');s.seekSolo(0,s.origins[0]);s.seekSolo(1,s.origins[1]);setConfig(null);setPanel('firstBeat');}
  function openConfig(index:number,tab?:ConfigStep){setPanel(null);s.pause();s.setNotice('');setStep(tab||(s.sources[index]&&!(index===1&&s.camera)?'tempo':'source'));setConfig(index);}
  function removeVideo(index:number){s.removeVideo(index);setConfig(null);setPanel(null);}
- function closeConfig(save=false){if(save&&tempoConfig.current&&!tempoConfig.current.save()){setStep('tempo');s.setNotice('保存できませんでした。解析結果のメッセージを確認してください。');return;}const saved=s.finishTimingEdit(save);if(save&&!saved)return;setConfig(null);}
+ function closeConfig(save=false){if(save&&tempoConfig.current&&!tempoConfig.current.save()){setStep('tempo');s.setNotice('保存できませんでした。解析結果のメッセージを確認してください。');return;}const saved=s.finishTimingEdit(save);if(save&&!saved)return;if(save&&trackingTarget!==null&&(step==='tempo'||step==='origin'))setMotionPending(true);setConfig(null);}
  function changeStep(value:string){s.pause();s.setNotice('');setStep(value as ConfigStep);}
  function setLoopFromMeasure(count:number){const bounds=measureLoop(s.time,s.origins[0],s.bpm[0],count,s.durations[0]);if(bounds.end-bounds.start<.1){s.setNotice('少し前に戻して、ループする区間を選んでください。');return;}setMeasures(count);s.setLoop({...bounds,enabled:true});s.seek(bounds.start);}
  async function saveLink(value=link){try{
@@ -178,7 +198,7 @@ export default function Home(){
  const silentTapNotice=config!==null&&step==='tempo'&&/^(TAP:|毎拍)/.test(s.notice);
  return <main data-fullscreen={fullscreen.mode} className={'studio '+(immersive?'studio-immersive ':'')+(fullscreen.expanded?'studio-expanded ':'')+(config!==null?'editing ':'')+(choosing?'choosing ':'')+(isYoutube?'has-youtube ':'')+(panel==='alignment'||panel==='firstBeat'?'aligning':'')+(panel==='firstBeat'?' first-beat-timing':'')}>
   <header className="masthead"><div className="brand">{config!==null?<button className="icon-button" aria-label="練習画面に戻る" onClick={()=>closeConfig()}><ArrowLeft/></button>:<Activity className="brandmark"/>}<h1>{config!==null?`${config===0?'お手本':'自分'}の設定`:'ヲタ芸マスター'}</h1></div><div className="masthead-actions">{config===null?<Tabs value={mode} onValueChange={v=>{if(v==='compare')setPanel(null);setMode(String(v));}}><TabsList aria-label="動画の表示"><TabsTrigger value="compare"><Columns2/><span>比較</span></TabsTrigger><TabsTrigger value="overlay"><Layers2/><span>重ねる</span></TabsTrigger></TabsList></Tabs>:<span className="private-label">動画ごとに設定</span>}<button type="button" className="icon-button fullscreen-button" aria-label={fullscreen.expanded?'全画面を終了':'全画面にする'} title={fullscreen.expanded?'全画面を終了':'全画面にする'} aria-pressed={fullscreen.expanded} disabled={fullscreen.pending||choosing} onClick={toggleFullscreen}>{fullscreen.expanded?<Minimize/>:<Maximize/>}</button></div></header>
-  <div className={'decks '+(overlay?'overlaid '+(s.alignmentMaster===1?'alignment-master-self ':''):'')+(overlay&&isYoutube?'youtube-overlaid ':'')+(youtubeControls?'youtube-controls-visible ':'')+(config!==null?'configuring':'')}>
+  <div ref={decksRef} style={{'--packed-columns':packed.columns,'--packed-rows':packed.rows} as CSSProperties} className={'decks '+(overlay?'overlaid '+(s.alignmentMaster===1?'alignment-master-self ':''):'')+(overlay&&isYoutube?'youtube-overlaid ':'')+(youtubeControls?'youtube-controls-visible ':'')+(config!==null?'configuring':'')}>
    {[0,1].map(i=>{
     const source=s.sources[i],yt=i===0&&!!s.sources[0]?.youtube,live=i===1&&s.camera,selected=config===i,empty=!source&&!live,t=i===0?s.time:s.selfTime,available=!!source&&(yt?s.youtubeReady:s.durations[i]>0)&&!live;
     const calibrating=selected&&step==='camera'&&!yt&&!live,cutSource=live?'camera':source?.url||'',cutKey=cutSource+'|'+backgrounds[i].mode;
@@ -199,7 +219,7 @@ export default function Home(){
      <header className="deck-header"><span className="deck-dot"/><strong>{i===0?'お手本':'自分'}</strong>{yt&&overlay&&<button className="button mini youtube-overlay-toggle" disabled={!s.sources[1]&&!s.camera} aria-pressed={youtubeControls} onClick={()=>setYoutubeControls(v=>!v)}>{youtubeControls?'重ね表示に戻る':'YouTubeを操作'}</button>}{source?.twitter?<a className="filename" href={source.twitter.url} target="_blank" rel="noopener noreferrer" title="Xの元投稿を開く">{source.name} ↗</a>:<span className="filename" title={source?.name}>{live?cameraFacingLabel[s.cameraFacing]:source?.name||'動画未選択'}</span>}{source?.twitter&&<TwitterVideoSwitch source={source.twitter} loading={s.linkLoading} disabled={s.recording||s.optimizing||poseBusy||sequence!==null} select={value=>void changeTwitterVideo(value)} cancel={()=>{s.cancelLinkLoad();s.setNotice('動画の切り替えを中止しました。');}}/>}<span className="deck-status">{live?'LIVE · '+cameraFormatLabel[s.cameraFormat]:i===1&&s.optimized?'軽量版':s.bpmKinds[i]==='unset'?'BPM 未設定':`${Number(s.bpm[i].toFixed(3))} BPM`}</span></header>
      <div className="deck-body"><div ref={i===1?selfStage:referenceStage} style={{mixBlendMode:overlay&&appearance.tint&&cutReady?'screen':undefined}} className={'video-stage '+(selected&&available&&!yt?'with-preview ':'')+(yt?'youtube-stage':'')+(cutReady&&!overlay?' cutout-preview '+backgrounds[i].preview:'')}>
       <VideoGrade id={gradeId} value={{...appearance,tint:appearance.tint&&cutReady}} index={i}/><div className="motion-layer" ref={i===0?motionReference:motionSelf}>
-      {yt&&source?.youtube?<YouTubeReference key={source.key+":"+source.instance} link={source.youtube} style={overlay&&!youtubeControls?{transform:alignmentCss(s.alignments[0],stageSize),opacity:mediaStyle.opacity}:undefined} ready={s.attachYoutube} state={s.youtubeState} rate={s.youtubeRate} error={s.youtubeError} metadata={s.youtubeMetadata}/>:<video ref={i===0?s.reference:s.self} src={source?.url} playsInline muted={s.preparing||live||i!==(s.soloPlaying??s.soundSource)} preload="auto" style={{...mediaStyle,opacity:cutReady?0:mediaStyle.opacity}} onLoadedMetadata={()=>{if(!live)s.loaded(i);}} onEnded={()=>s.mediaEnded(i)} onWaiting={()=>s.mediaWaiting(i)} onSeeking={()=>s.interruptTap(i)} onPause={e=>{if(e.currentTarget.paused)s.interruptTap(i);}} onPlaying={i===0?s.mediaPlaying:undefined} onError={()=>{if(source&&!live)s.mediaError(i);}} aria-label={i===0?'お手本の映像':'自分の映像'}/>}
+      {yt&&source?.youtube?<YouTubeReference key={source.key+":"+source.instance} link={source.youtube} style={overlay&&!youtubeControls?{transform:alignmentCss(s.alignments[0],stageSize),opacity:mediaStyle.opacity}:undefined} ready={s.attachYoutube} state={s.youtubeState} rate={s.youtubeRate} error={s.youtubeError} metadata={s.youtubeMetadata}/>:<video ref={i===0?s.reference:s.self} src={source?.url} playsInline muted={s.preparing||live||i!==(s.soloPlaying??s.soundSource)} preload="auto" style={{...mediaStyle,opacity:cutReady?0:mediaStyle.opacity}} onResize={e=>readVideoSize(i,e.currentTarget)} onLoadedMetadata={e=>{readVideoSize(i,e.currentTarget);if(!live)s.loaded(i);}} onEnded={()=>s.mediaEnded(i)} onWaiting={()=>s.mediaWaiting(i)} onSeeking={()=>s.interruptTap(i)} onPause={e=>{if(e.currentTarget.paused)s.interruptTap(i);}} onPlaying={i===0?s.mediaPlaying:undefined} onError={()=>{if(source&&!live)s.mediaError(i);}} aria-label={i===0?'お手本の映像':'自分の映像'}/>}
       {cutActive&&<BackgroundVideo video={i===0?s.reference:s.self} settings={backgrounds[i]} source={cutSource} active={cutActive} style={mediaStyle} status={(ready,message)=>{setBackgroundReady(v=>{const next=ready?cutKey:'';return v[i]===next?v:v.map((old,j)=>i===j?next:old);});if(message&&!message.startsWith('背景を準備中'))s.setNotice(message);}}/>}
       {appearance.skeleton&&!yt&&boneCurrent&&<PoseOverlay stage={boneStage} color={i===0?'#cdfa69':'#c5afff'} points={bonePoints}/>}
       {appearance.skeleton&&!yt&&!boneCurrent&&showPose&&poses&&<PoseOverlay stage={poses.stage} color={i===0?'#cdfa69':'#c5afff'} points={transformPose(poses.points[i],s.alignments[i],poses.stage)}/>}
@@ -207,7 +227,7 @@ export default function Home(){
       {appearance.skeleton&&!yt&&livePoints.status!=='visible'&&<span className="stage-badge skeleton-status" role="status">{livePoints.status==='loading'?'骨格を準備中':livePoints.status==='error'?'骨格を表示できません':'骨格を検出できない場面'}</span>}
       {live&&!overlay&&<div className="camera-recording-frame" style={cameraPreviewStyle} aria-label={`録画範囲 ${cameraFormatLabel[s.cameraFormat]}`}/>}
       {live&&s.recordingBusy&&<span className="stage-badge" role="status">録画を準備中…</span>}
-      {overlay&&!s.camera&&trackingTarget===i&&<button className="stage-badge motion-badge" disabled={s.recording||s.optimizing||poseBusy||sequence!==null} onClick={()=>{s.pause();if(missingBpm!==null)openConfig(missingBpm,'tempo');else if(!motionCurve?.frames.length&&!motionHint)startSequence(true);else setPanel('alignment');}} aria-label={`${i===0?'お手本':'自分'}の追従設定`}>{motionCurve?.frames.length?trackingLabel:motionHint?'追従の準備':'追従を解析'}</button>}
+      {config===null&&!choosing&&!s.camera&&trackingTarget===i&&<button className="stage-badge motion-badge" disabled={s.recording||s.optimizing||poseBusy||sequence!==null} onClick={openMotion} aria-label={`${i===0?'お手本':'自分'}の追従設定`}>{trackingText}</button>}
       {empty&&<div className="empty-stage"><p>{i===0?'お手本の動画を選ぶ':'自分の動画、またはカメラ'}</p>{selected?<button className="button" onClick={()=>changeStep('source')}>動画タブで選ぶ</button>:sourceChoices(i)}<small>動画は端末内で処理します</small></div>}
       {s.preparing&&!live&&!yt&&<div className="start-sync-cover" role="status"><span>{s.camera?'再生を準備しています…':'開始位置を合わせています…'}</span></div>}{i===0&&!yt&&s.buffering&&<span className="stage-badge">読み込み中</span>}{live&&s.recording&&<span className="stage-badge rec" role="status">● REC · {recordingSoundLabel[s.recordingSound]}</span>}{live&&!s.recording&&s.recordingDownload&&<a className="stage-badge recording-save" href={s.recordingDownload.url} download={s.recordingDownload.name}><Download size={14}/>録画を保存</a>}
       {i===1&&source&&!live&&s.playing&&(targetSelf<0||targetSelf>=s.durations[1])&&<span className="stage-badge">{targetSelf<0?'動画の開始前':'動画の終了後'}</span>}
@@ -225,7 +245,7 @@ export default function Home(){
      </Tabs>}
     </section>;
    })}
-   <FullscreenPlayerControls active={immersive} help={fullscreen.help||undefined} playing={s.playing} preparing={s.preparing} time={s.time} duration={s.durations[0]} onPlay={()=>{if(missingBpm!==null){void fullscreen.exit();openConfig(missingBpm,'tempo');}else void s.play();}} onPause={s.pause} onSeek={s.seek} onExit={()=>void fullscreen.exit()}/>
+   <FullscreenPlayerControls tracking={!s.camera&&trackingTarget!==null?{label:trackingText,disabled:s.recording||s.optimizing||poseBusy||sequence!==null,open:()=>{if(motionCurve?.frames.length||motionHint)void fullscreen.exit();openMotion();}}:undefined} active={immersive} help={fullscreen.help||undefined} playing={s.playing} preparing={s.preparing} time={s.time} duration={s.durations[0]} onPlay={()=>{if(missingBpm!==null){void fullscreen.exit();openConfig(missingBpm,'tempo');}else void s.play();}} onPause={s.pause} onSeek={s.seek} onExit={()=>void fullscreen.exit()}/>
    {overlay&&panel==='alignment'&&!youtubeControls&&!poseBusy&&!sequence&&!s.recording&&!s.optimizing&&hasReference&&(!!s.sources[1]||s.camera)&&<AlignmentGestures value={s.alignment} target={s.alignmentTarget} scope={`${s.sources[0]?.url}|${s.sources[1]?.url}|${s.camera}|${s.alignmentMaster}|${stageSize.width}|${stageSize.height}`} change={s.setAlignment} start={s.pause}/>}
   </div>
   {config===null&&panel==='firstBeat'?<FirstBeatEditor origins={s.origins} bpm={s.bpm} durations={s.durations} playing={s.playing} preparing={s.preparing} seek={s.seekSolo} pause={s.pause} preview={(values,lead)=>void s.previewFirstBeats(values,lead)} save={values=>{if(s.applyFirstBeats(values,true))setPanel(null);}} close={()=>setPanel(null)}/>:config===null&&panel==='alignment'?<AlignmentEditor master={s.alignmentMaster} changeMaster={value=>{s.pause();poseRequest.current++;setPoses(null);setSequence(null);s.setAlignmentMaster(value);}} masterDisabled={!hasReference||(!s.sources[1]&&!s.camera)||s.recording||s.optimizing} manualOnly={isYoutube} background={<><div className="overlay-appearance-presets"><strong>重ねた人物の見やすさ</strong><div>{(['normal','bones','person','color'] as const).map((kind,i)=><button className="button" key={kind} onClick={()=>overlayPreset(kind)}>{['通常','骨格で比較','人物だけ','色分け'][i]}</button>)}</div><div className="skeleton-choices">{[0,1].map(i=><button className="button" key={i} aria-label={(i===0?'お手本':'自分')+'の骨格表示'} aria-pressed={appearances[i].skeleton} disabled={i===0&&isYoutube} onClick={()=>changeAppearance(i,{...appearances[i],skeleton:!appearances[i].skeleton})}>{i===0?'お手本':'自分'}の骨格 {appearances[i].skeleton?'ON':'OFF'}</button>)}</div></div><AppearanceControls value={appearances[s.alignmentTarget]} change={v=>changeAppearance(s.alignmentTarget,v)} disabled={s.alignmentTarget===0&&isYoutube}/><BackgroundControls settings={backgrounds[s.alignmentTarget]} change={v=>changeBackground(s.alignmentTarget,v)} disabled={s.alignmentTarget===0?isYoutube||!hasReference:!s.sources[1]&&!s.camera}/></>} alignment={s.alignment} change={(key,value)=>{s.pause();s.setAlignment(a=>({...a,[key]:value}));}} auto={()=>void autoAlign()} autoSequence={()=>startSequence(false)} motion={motionControls} sequenceHint={sequenceHint} busy={poseBusy||sequence!==null} disabled={s.recording||s.optimizing||!s.sources[0]||(!s.sources[1]&&!s.camera)} close={()=>setPanel(null)} reset={resetAlignment} form={poses? <div className="form-differences"><small style={{gridColumn:"1/-1"}}>位置合わせ時のフォーム差（画角補正後の2D）</small>{[[11,13,15],[12,14,16],[23,25,27],[24,26,28]].map((ids,j)=>{const a=jointAngle(poses.points[0],ids[0],ids[1],ids[2]);const counterpart=poses.mirrors[0]!==poses.mirrors[1]?ids.map(n=>n%2?n+1:n-1):ids;const b=jointAngle(poses.points[1],counterpart[0],counterpart[1],counterpart[2]);return <span key={j}>{['左肘','右肘','左膝','右膝'][j]}の角度差 {a===null||b===null?'未検出':`${Math.round(Math.abs(a-b))}°`}</span>;})}</div>:<p>同じ姿勢で止めて、下の骨格合わせを実行してください。</p>}/>:config===null?<footer className="practice-dock"><div className="count-row"><span className="position-label" aria-label="現在の小節と技" title="1小節＝4拍・1技＝32拍（8小節）。小節は最初の1から通算。"><span>{counted&&beat.index>=0?beat.measure:'—'}小節</span><span>{counted&&beat.index>=0?beat.technique:'—'}技</span></span><div className="beat-cells" aria-label="現在の拍">{[1,2,3,4,5,6,7,8].map(n=><span key={n} className={counted&&beat.index>=0&&beat.beat===n?'active':''}>{n}</span>)}</div><label className="click-toggle"><span>拍音</span><Switch size="sm" disabled={!counted} checked={s.click} onCheckedChange={s.setClick} aria-label="拍のクリック音"/></label></div>

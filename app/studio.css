@@ -393,4 +393,4 @@
 .studio.studio-immersive .overlaid .deck,.studio.studio-immersive .overlaid .deck-body{display:contents}
 .studio.studio-immersive .overlaid .deck-1 .video-stage,.studio.studio-immersive .overlaid.alignment-master-self .deck-0 .video-stage{background:transparent}
 .studio.studio-immersive .overlaid.alignment-master-self .deck-1 .video-stage{background:#000}
-@media(orientation:landscape){.studio.studio-immersive .decks:not(.overlaid){grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-template-rows:minmax(0,1fr)!important}}
+.studio.studio-immersive .decks:not(.overlaid){grid-template-columns:var(--packed-columns)!important;grid-template-rows:var(--packed-rows)!important;gap:0!important;align-content:center;justify-content:center}

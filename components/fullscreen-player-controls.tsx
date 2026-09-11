@@ -13,13 +13,14 @@ export type FullscreenPlayerControlsProps={
  time:number;
  duration:number;
  help?:string;
+ tracking?:{label:string;disabled:boolean;open:()=>void};
  onPlay:()=>void;
  onPause:()=>void;
  onSeek:(time:number)=>void;
  onExit:()=>void;
 };
 
-export function FullscreenPlayerControls({active,playing,preparing=false,time,duration,help,onPlay,onPause,onSeek,onExit}:FullscreenPlayerControlsProps){
+export function FullscreenPlayerControls({active,playing,preparing=false,time,duration,help,tracking,onPlay,onPause,onSeek,onExit}:FullscreenPlayerControlsProps){
  const [visible,setVisible]=useState(false),[scrubTime,setScrubTime]=useState<number|null>(null),controls=useRef<HTMLDivElement>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const scrubbing=useRef(false),scrubValue=useRef(0),scrubWasPlaying=useRef(false);
  const latestPlay=useRef(onPlay);latestPlay.current=onPlay;
@@ -51,11 +52,13 @@ export function FullscreenPlayerControls({active,playing,preparing=false,time,du
   }
  },[visible]);
 
- useEffect(()=>{
-  if(!active)return;
-  const onKeyDown=(event:KeyboardEvent)=>{
-   if(event.key==='Tab'||event.key==='Enter'||event.key===' '||event.key==='Escape'||event.key.startsWith('Arrow'))reveal();
-  };
+  useEffect(()=>{
+    if(!active)return;
+    const onKeyDown=(event:KeyboardEvent)=>{
+      const target=event.target;
+      if(target instanceof Element&&target.closest('[data-fullscreen-player-tap]'))return;
+      if(event.key==='Tab'||event.key==='Enter'||event.key===' '||event.key==='Escape'||event.key.startsWith('Arrow'))reveal();
+    };
   window.addEventListener('keydown',onKeyDown);
   return()=>window.removeEventListener('keydown',onKeyDown);
  },[active,reveal]);
@@ -111,10 +114,15 @@ export function FullscreenPlayerControls({active,playing,preparing=false,time,du
   if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(event.key))finishScrub(scrubValue.current);
  };
  const stopInteraction=(event:SyntheticEvent)=>{reveal();event.stopPropagation();};
- const tapStage=(event:SyntheticEvent)=>{reveal();event.stopPropagation();};
- if(!active)return null;
- return <div className="fullscreen-player-controls" data-visible={visible}>
-  <button type="button" className="fullscreen-player-controls__tap" tabIndex={0} aria-label="再生コントロールを表示" onClick={tapStage}/>
+  const tapStage=(event:SyntheticEvent)=>{
+    event.stopPropagation();
+    if(!active)return;
+    if(visible){clearTimer();setVisible(false);}
+    else{setVisible(true);scheduleHide();}
+  };
+  if(!active)return null;
+  return <div className="fullscreen-player-controls" data-visible={visible}>
+    <button type="button" className="fullscreen-player-controls__tap" tabIndex={0} data-fullscreen-player-tap aria-expanded={visible} aria-label={visible?'再生コントロールを隠す':'再生コントロールを表示'} onClick={tapStage}/>
   <div ref={controls} className="fullscreen-player-controls__panel" role="toolbar" aria-label="全画面動画の操作" aria-hidden={!visible} onClick={stopInteraction} onPointerDown={stopInteraction}>
    <div className="fullscreen-player-controls__buttons">
     <button type="button" tabIndex={visible?0:-1} className="fullscreen-player-controls__button" aria-label={preparing?'再生準備を中止':playing?'一時停止':'再生'} disabled={preparing?false:!safeDuration} onClick={togglePlayback}>
@@ -126,6 +134,7 @@ export function FullscreenPlayerControls({active,playing,preparing=false,time,du
     <button type="button" tabIndex={visible?0:-1} className="fullscreen-player-controls__button" aria-label="全画面を終了" onClick={onExit}><X aria-hidden="true"/></button>
    </div>
    <label className="fullscreen-player-controls__seek-label"><span className="sr-only">動画の再生位置</span><input type="range" tabIndex={visible?0:-1} min={0} max={safeDuration||1} step={.01} value={displayTime} disabled={disabled} aria-label="動画の再生位置" aria-valuetext={`${formatMediaTime(displayTime)} / ${formatMediaTime(safeDuration)}`} onClick={stopInteraction} onPointerDown={startPointerScrub} onPointerUp={endPointerScrub} onPointerCancel={endPointerScrub} onKeyDown={startKeyboardScrub} onKeyUp={endKeyboardScrub} onBlur={event=>finishScrub(scrubValue.current)} onChange={changeScrub}/></label>
+   {tracking&&<button type="button" className="fullscreen-player-controls__tracking" aria-label="位置追従を設定" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.open}>{tracking.label} · 設定</button>}
    {help&&<p className="fullscreen-player-controls__help" role="note">{help}</p>}
   </div>
  </div>;

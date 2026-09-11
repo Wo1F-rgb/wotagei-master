@@ -32,17 +32,35 @@ try{
  const before=await page.evaluate(()=>({times:window.qaVideoElements.map(v=>v.currentTime),seeks:window.qaSeeks.length}));
  await button('全画面にする').click();await page.locator('.studio-immersive[data-fullscreen="page"]').waitFor();
  await page.waitForTimeout(3300);
- const layout=async expected=>{const data=await page.evaluate(()=>({width:innerWidth,height:innerHeight,root:document.querySelector('.decks').getBoundingClientRect().toJSON(),stages:[...document.querySelectorAll('.video-stage')].map(v=>v.getBoundingClientRect().toJSON()),headers:[...document.querySelectorAll('.masthead,.deck-header,.tool-rail,.practice-dock')].map(v=>getComputedStyle(v).display),same:window.qaVideoElements.every((v,i)=>v===document.querySelectorAll('.video-stage video')[i]),overflow:document.documentElement.scrollWidth>innerWidth||document.documentElement.scrollHeight>innerHeight}));assert.ok(data.same);assert.ok(!data.overflow);assert.ok(data.headers.every(v=>v==='none'));assert.equal(data.root.x,0);assert.equal(data.root.y,0);assert.equal(data.root.width,data.width);assert.equal(data.root.height,data.height);for(const s of data.stages){assert.ok(s.width>=expected.w*data.width);assert.ok(s.height>=expected.h*data.height);}return data;};
- results.push(await layout({w:.99,h:.49}));assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
+ const layout=async overlay=>{
+  await page.waitForTimeout(150); // ResizeObserver packs the pair after viewport/fullscreen changes.
+  const data=await page.evaluate(()=>({width:innerWidth,height:innerHeight,root:document.querySelector('.decks').getBoundingClientRect().toJSON(),stages:[...document.querySelectorAll('.video-stage')].map(v=>v.getBoundingClientRect().toJSON()),videos:[...document.querySelectorAll('.video-stage video')].map(v=>({width:v.videoWidth,height:v.videoHeight})),headers:[...document.querySelectorAll('.masthead,.deck-header,.tool-rail,.practice-dock')].map(v=>getComputedStyle(v).display),same:window.qaVideoElements.every((v,i)=>v===document.querySelectorAll('.video-stage video')[i]),overflow:document.documentElement.scrollWidth>innerWidth||document.documentElement.scrollHeight>innerHeight}));
+  assert.ok(data.same);assert.ok(!data.overflow);assert.ok(data.headers.every(v=>v==='none'));assert.equal(data.root.x,0);assert.equal(data.root.y,0);assert.equal(data.root.width,data.width);assert.equal(data.root.height,data.height);
+  for(const [i,s] of data.stages.entries()){
+   assert.ok(s.x>=-.1&&s.y>=-.1&&s.right<=data.width+.1&&s.bottom<=data.height+.1,'whole image fits');
+   if(overlay){assert.equal(s.width,data.width);assert.equal(s.height,data.height);}
+   else assert.ok(Math.abs(s.width/s.height-data.videos[i].width/data.videos[i].height)<.003,'no letterbox inside each frame');
+  }
+  if(!overlay){const [a,b]=data.stages;assert.ok(Math.abs(data.width>data.height?b.x-a.right:b.y-a.bottom)<.1,'no gap between video images');assert.ok(Math.abs(data.width>data.height?b.right-a.x-data.width:b.width-data.width)<.1,'pair uses available width');}
+  return data;
+ };
+ results.push(await layout(false));assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
  assert.equal(await page.evaluate(()=>window.qaSeeks.length),before.seeks,'entering fullscreen does not re-seek the videos');assert.ok((await state()).playing);
  await button('再生コントロールを表示').click({position:{x:100,y:100}});await page.getByRole('toolbar',{name:'全画面動画の操作'}).waitFor();
+ // Tap must toggle in both directions, including while paused; controls themselves never toggle the stage.
+ await button('再生コントロールを隠す').click({position:{x:100,y:100}});assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
+ await button('再生コントロールを表示').click({position:{x:100,y:100}});await button('一時停止').click();
+ await button('再生コントロールを隠す').click({position:{x:100,y:100}});assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
+ await button('再生コントロールを表示').focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'true');
+ await button('再生コントロールを隠す').focus();await page.keyboard.press('Space');assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
+ await button('再生コントロールを表示').click({position:{x:100,y:100}});await button('再生').click();await page.waitForFunction(()=>window.qaVideoElements.every(v=>!v.paused));
  await page.getByRole('slider',{name:'動画の再生位置',exact:true}).focus();await page.keyboard.press('ArrowRight');await page.waitForTimeout(1300);assert.ok((await state()).playing,'seek resumes only previously playing media');
  const seekBox=await page.getByRole('slider',{name:'動画の再生位置',exact:true}).boundingBox();await page.mouse.move(seekBox.x+seekBox.width*.4,seekBox.y+seekBox.height/2);await page.mouse.down();await page.keyboard.press('Escape');await page.mouse.up();await page.locator('.studio-immersive').waitFor({state:'hidden'});await button('停止').waitFor({timeout:15000});
  await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();await page.getByRole('slider',{name:'動画の再生位置',exact:true}).focus();await page.keyboard.press('ArrowRight');await page.waitForTimeout(1300);assert.ok((await state()).playing,'exiting mid-drag clears stale scrub state and restores playback');
  await button('全画面を終了').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});assert.equal(await page.locator('.studio-immersive').count(),0);await dismiss();await button('停止').click();
- await page.getByRole('tab',{name:'重ねる',exact:true}).click();await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();results.push(await layout({w:.99,h:.99}));
- await page.setViewportSize({width:844,height:390});results.push(await layout({w:.99,h:.99}));await button('全画面を終了').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});
- await page.getByRole('tab',{name:'比較',exact:true}).click();await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();results.push(await layout({w:.49,h:.99}));await page.keyboard.press('Escape');await page.locator('.studio-immersive').waitFor({state:'hidden'});assert.equal(await page.locator('.studio-immersive').count(),0);
+ await page.getByRole('tab',{name:'重ねる',exact:true}).click();await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();results.push(await layout(true));
+ await page.setViewportSize({width:844,height:390});results.push(await layout(true));await button('全画面を終了').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});
+ await page.getByRole('tab',{name:'比較',exact:true}).click();await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();results.push(await layout(false));await page.keyboard.press('Escape');await page.locator('.studio-immersive').waitFor({state:'hidden'});assert.equal(await page.locator('.studio-immersive').count(),0);
  // Native fullscreen path also preserves both media elements and exits through the same control.
  await page.evaluate(()=>{delete document.fullscreenEnabled;delete document.documentElement.webkitRequestFullscreen;});await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();assert.equal(await page.locator('main').getAttribute('data-fullscreen'),'native');await button('全画面を終了').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});
  await button('自分の設定').click();await page.getByRole('tab',{name:'表示',exact:true}).click();const gamma=page.getByRole('slider',{name:'暗部の明るさ（ガンマ）',exact:true});await gamma.focus();await gamma.press('ArrowRight');
@@ -71,5 +89,5 @@ try{
    await button('重ね合わせ調整').click();await page.getByRole('tab',{name:'表示',exact:true}).click();
   }
  }
- assert.deepEqual(errors,[]);console.log('Viewer verified: video-only native/fallback fullscreen, auto-hide/reveal, seek/resume, portrait/landscape comparison + overlay, live pose toggle, gamma and persisted display settings.');
+ assert.deepEqual(errors,[]);console.log('Viewer verified: video-only native/fallback fullscreen, gapless frames, tap show/hide while paused and playing, seek/resume, portrait/landscape comparison + overlay, live pose toggle, gamma and persisted display settings.');
 }finally{if(process.env.VIEW_QA_DIR){await mkdir(process.env.VIEW_QA_DIR,{recursive:true});await writeFile(resolve(process.env.VIEW_QA_DIR,'viewer-results.json'),JSON.stringify(results,null,2));}await browser?.close();await new Promise(resolve=>server.close(resolve));}

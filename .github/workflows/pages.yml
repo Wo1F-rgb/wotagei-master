@@ -28,6 +28,7 @@ jobs:
       - run: node tests/built-sync.mjs
       - run: node tests/built-camera.mjs
       - run: node tests/built-viewer.mjs
+      - run: node tests/built-motion.mjs
       - run: node tests/built-background-worker.mjs
       - run: node tests/static-output.mjs
       - uses: actions/upload-pages-artifact@v4
