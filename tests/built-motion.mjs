@@ -74,6 +74,15 @@ try{
  // A changed tempo invalidates sample pairing. Saving the timing page queues a new confirmation.
  await configure({referenceBpm:151});await page.waitForTimeout(150);assert.ok((await layers()).every(v=>v.transform===''));assert.equal(await page.locator('.auto-alignment-dialog').count(),0,'editing itself never interrupts with a dialog');
  await button('お手本の設定').click();await page.getByRole('tab',{name:'拍の位置',exact:true}).click();await button('保存して戻る').click();await page.locator('.auto-alignment-dialog').waitFor();await confirm();
- await page.locator('.track-nudge').last().click();await page.waitForTimeout(150);assert.ok((await layers()).every(v=>v.transform===''),'beat-origin edit invalidates old pairing');assert.equal(await page.locator('.auto-alignment-dialog').count(),0,'fine nudging remains uninterrupted');
- assert.deepEqual(errors,[]);console.log('Motion orchestration passed: BPM gating, confirmation/cancel, continuous CSS in comparison/overlay/fullscreen, fixed-side preservation, no playback seeks/inference, static baseline, spatial master, tempo/origin invalidation.');
+  await page.locator('.track-nudge').last().click();await page.waitForTimeout(150);assert.ok((await layers()).every(v=>v.transform===''),'beat-origin edit invalidates old pairing');assert.equal(await page.locator('.auto-alignment-dialog').count(),0,'fine nudging remains uninterrupted');
+ // Delay the separate single-frame detector across a settings/BPM edit. Its old fit must never overwrite the manual baseline.
+ await page.route('**/vision_bundle-*.js',route=>route.fulfill({contentType:'text/javascript',body:`
+  export const FilesetResolver={forVisionTasks:async()=>({})};
+  export const PoseLandmarker={createFromOptions:()=>new Promise(resolve=>{window.qaReleasePose=()=>{let n=0;resolve({close(){},detect(){const dx=n++===0?0:.15,p=Array.from({length:33},()=>({x:.5+dx,y:.5,visibility:1}));for(const [i,x,y] of [[0,.5,.12],[11,.43,.3],[12,.57,.3],[23,.46,.56],[24,.54,.56],[27,.3,.92],[28,.7,.92]])p[i]={x:x+dx,y,visibility:1};window.qaOldPoseReturned=true;return{landmarks:[p]}}})}})};
+ `}));
+ await dismiss();await button('重ね合わせ調整').click();const savedX=await x.inputValue();
+ await button('今の1コマで合わせる').click();await page.waitForFunction(()=>typeof window.qaReleasePose==='function');
+ await button('お手本の設定').click();await configure({referenceBpm:152});await page.evaluate(()=>window.qaReleasePose());await page.waitForFunction(()=>window.qaOldPoseReturned);
+ await button('練習画面に戻る').click();await dismiss();await button('重ね合わせ調整').click();assert.equal(await x.inputValue(),savedX,'late single-frame result cannot overwrite manual alignment');
+  assert.deepEqual(errors,[]);console.log('Motion orchestration passed: BPM gating, confirmation/cancel, continuous CSS in comparison/overlay/fullscreen, fixed-side preservation, no playback seeks/inference, static baseline, spatial master, tempo/origin invalidation.');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

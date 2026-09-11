@@ -93,7 +93,7 @@ export default function Home(){
  const [stageSize,setStageSize]=useState<Size>({width:0,height:0});
  useEffect(()=>{const el=selfStage.current;if(!el)return;const observer=new ResizeObserver(entries=>{const rect=entries[0]?.contentRect;if(!rect)return;setStageSize(old=>old.width===rect.width&&old.height===rect.height?old:{width:rect.width,height:rect.height});});observer.observe(el);return()=>observer.disconnect();},[]);
  useEffect(()=>{poseRequest.current++;setPoseBusy(false);setPoses(null);},[stageSize.width,stageSize.height]);
- useEffect(()=>{poseRequest.current++;setPoseBusy(false);setPoses(null);},[s.sources[0]?.key,s.sources[1]?.key,s.mirrors[0],s.mirrors[1],s.camera,s.alignmentMaster]);
+ useEffect(()=>{poseRequest.current++;setPoseBusy(false);setPoses(null);},[s.sources[0]?.key,s.sources[1]?.key,s.mirrors[0],s.mirrors[1],s.camera,s.alignmentMaster,s.bpm[0],s.bpm[1],s.origins[0],s.origins[1]]);
  useEffect(()=>{poseRequest.current++;setPoseBusy(false);setPoses(null);},[scenes[0],scenes[1]]);
  useEffect(()=>()=>{poseRequest.current++;},[]);
  useEffect(()=>{setSequence(null);},[s.sources[0]?.url,s.sources[1]?.url,s.camera,s.bpm[0],s.bpm[1],s.origins[0],s.origins[1],s.mirrors[0],s.mirrors[1],scenes[0],scenes[1],stageSize.width,stageSize.height,s.alignmentMaster]);
@@ -165,7 +165,7 @@ export default function Home(){
   return()=>cancelAnimationFrame(frame);
  },[motionPending,config,motionHint,trackingTarget,sequence,poseBusy,s.recording,s.optimizing,motionCurve,motionScope,motionStage.width,motionStage.height]);
  function openFirstBeat(){s.pause();s.setNotice('');s.seekSolo(0,s.origins[0]);s.seekSolo(1,s.origins[1]);setConfig(null);setPanel('firstBeat');}
- function openConfig(index:number,tab?:ConfigStep){setPanel(null);s.pause();s.setNotice('');setStep(tab||(s.sources[index]&&!(index===1&&s.camera)?'tempo':'source'));setConfig(index);}
+ function openConfig(index:number,tab?:ConfigStep){poseRequest.current++;setPoseBusy(false);setPoses(null);setPanel(null);s.pause();s.setNotice('');setStep(tab||(s.sources[index]&&!(index===1&&s.camera)?'tempo':'source'));setConfig(index);}
  function removeVideo(index:number){s.removeVideo(index);setConfig(null);setPanel(null);}
  function closeConfig(save=false){if(save&&tempoConfig.current&&!tempoConfig.current.save()){setStep('tempo');s.setNotice('保存できませんでした。解析結果のメッセージを確認してください。');return;}const saved=s.finishTimingEdit(save);if(save&&!saved)return;if(save&&trackingTarget!==null&&(step==='tempo'||step==='origin'))setMotionPending(true);setConfig(null);}
  function changeStep(value:string){s.pause();s.setNotice('');setStep(value as ConfigStep);}
