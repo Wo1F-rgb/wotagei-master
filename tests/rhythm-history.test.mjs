@@ -13,6 +13,13 @@ test('full analysis and unrounded draft survive leaving/reopening the database w
  for(const key of Object.keys(value))assert.deepEqual(restored[key],value[key]);
  assert.equal(await a.load('different-video'),null);
 });
+test('production settings baseline survives history and rejects malformed metadata',async()=>{
+ const factory=new IDBFactory(),value=entry('baseline-video',{baseline:{bpm:151.5,origin:4.3}});
+ const store=createRhythmHistoryStore(factory);assert.equal(await store.save(value),true);
+ assert.deepEqual((await createRhythmHistoryStore(factory).load(value.key)).baseline,value.baseline);
+ const restored=await store.load(value.key);
+ for(const baseline of [{bpm:Infinity,origin:4.3},{bpm:151.5,origin:-1},{bpm:301,origin:4.3}])assert.equal(validRhythmHistory({...restored,baseline}),false);
+});
 test('external audio identity and bytes are retained with BPM-only source semantics',async()=>{
  const factory=new IDBFactory(),audio={blob:new Blob(['music bytes'],{type:'audio/wav'}),name:'practice.wav',lastModified:789};
  await createRhythmHistoryStore(factory).save(entry('youtube:123',{source:'audio',audio}));

@@ -17,6 +17,7 @@ type Props = {
   active: boolean;
   savedBpm: number;
   savedOrigin: number;
+  savedKnown: boolean;
   mediaKey: string;
   mainPlaying: boolean;
   file: File | null;
@@ -117,16 +118,40 @@ function restoredAudio(entry: RhythmHistoryEntry | null) {
   return entry?.audio ? new File([entry.audio.blob], entry.audio.name, {type:entry.audio.blob.type, lastModified:entry.audio.lastModified}) : null;
 }
 
-export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
+type ProductionBaseline = {bpm:number;origin:number};
+
+function historyBaseline(entry: RhythmHistoryEntry | null, savedBpm: number, savedOrigin: number, savedKnown: boolean) {
+  const baseline = entry?.baseline;
+  // Before baseline metadata existed, a configured video grid is the only
+  // reliable authority. Migrate such legacy rows to it once. Audio rows keep
+  // their own origin, while their BPM still follows the video's saved tempo.
+  const legacyConfigured = Boolean(entry && !baseline && savedKnown);
+  const bpmChanged = baseline ? baseline.bpm !== savedBpm : legacyConfigured;
+  // An external origin change is meaningful only for a video draft. An
+  // analysis made from a separate audio file has its own origin by design.
+  const originChanged = baseline
+    ? Boolean(entry?.source === 'video' && baseline.origin !== savedOrigin)
+    : Boolean(legacyConfigured && entry?.source === 'video');
+  return {
+    bpm: baseline ? (bpmChanged ? savedBpm : baseline.bpm) : savedBpm,
+    origin: baseline ? (originChanged ? savedOrigin : baseline.origin) : savedOrigin,
+    bpmChanged,
+    originChanged,
+  };
+}
+
+export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown, mediaKey, mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
   const initial = useRef(mediaKey ? rhythmHistory().peek(mediaKey) : null).current;
+  const initialSource: SourceKind = initial?.source ?? (file ? 'video' : 'audio');
+  const initialValues = historyBaseline(initial, savedBpm, savedOrigin, savedKnown);
   const [historyReady, setHistoryReady] = useState(Boolean(initial) || !mediaKey);
-  const [source, setSource] = useState<SourceKind>(initial?.source ?? (file ? 'video' : 'audio'));
+  const [source, setSource] = useState<SourceKind>(initialSource);
   const [audioFile, setAudioFile] = useState<File | null>(() => restoredAudio(initial));
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioInputFile, setAudioInputFile] = useState<File | null>(null);
   const [result, setResult] = useState<RhythmAnalysisResult | null>(initial?.result ?? null);
-  const [bpmText, setBpmText] = useState(initial?.bpmText ?? '');
-  const [originText, setOriginText] = useState(initial?.originText ?? '');
+  const [bpmText, setBpmText] = useState(initial ? (initialValues.bpmChanged ? String(savedBpm) : initial.bpmText) : '');
+  const [originText, setOriginText] = useState(initial ? (initialValues.originChanged ? String(savedOrigin) : initial.originText) : '');
   const [position, setPosition] = useState(initial?.position ?? 0);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -136,6 +161,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
   const [hasStarted, setHasStarted] = useState(Boolean(initial));
   const resumePosition = useRef(initial?.position ?? 0);
   const historyDraft = useRef<RhythmHistoryEntry | null>(initial);
+  const productionBaseline = useRef<ProductionBaseline>({bpm:initialValues.bpm,origin:initialValues.origin});
   const historyWrite = useRef(0);
 
   const savedValues = useRef({bpm:savedBpm,origin:savedOrigin});
@@ -143,9 +169,9 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
   // Changes from the separate beat-position tab must win over an older analysis draft.
   useLayoutEffect(() => {
     const previous=savedValues.current;savedValues.current={bpm:savedBpm,origin:savedOrigin};
-    if(previous.bpm!==savedBpm)setBpmText(String(savedBpm));
-    if(previous.origin!==savedOrigin)setOriginText(String(savedOrigin));
-  }, [savedBpm,savedOrigin]);
+    if(previous.bpm!==savedBpm){productionBaseline.current.bpm=savedBpm;setBpmText(String(savedBpm));}
+    if(previous.origin!==savedOrigin){productionBaseline.current.origin=savedOrigin;if(source==='video')setOriginText(String(savedOrigin));}
+  }, [savedBpm,savedOrigin,source]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
@@ -160,6 +186,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
   if (historyReady && result && mediaKey) historyDraft.current = {
     key: mediaKey, source, result, bpmText, originText, position: clamp(position, 0, result.duration),
     audio: source === 'audio' && audioFile ? {blob: audioFile, name: audioFile.name, lastModified: audioFile.lastModified} : null,
+    baseline: {...productionBaseline.current},
   };
 
   useEffect(() => {
@@ -227,7 +254,8 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     setError('');
     setHistoryError('');
     setHasStarted(false);
-  }, []);
+    productionBaseline.current = {bpm:savedBpm,origin:savedOrigin};
+  }, [savedBpm,savedOrigin]);
 
   // The parent keys this component by the original video identity, not its slot
   // or temporary object URL. Restoring history never applies settings or plays.
@@ -237,8 +265,10 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     void rhythmHistory().load(mediaKey).then(entry => {
       if (!current) return;
       if (entry) {
+        const values=historyBaseline(entry,savedBpm,savedOrigin,savedKnown);
+        productionBaseline.current={bpm:values.bpm,origin:values.origin};
         setSource(entry.source); setAudioFile(restoredAudio(entry));
-        setResult(entry.result); setBpmText(entry.bpmText); setOriginText(entry.originText);
+        setResult(entry.result); setBpmText(values.bpmChanged?String(savedBpm):entry.bpmText); setOriginText(values.originChanged?String(savedOrigin):entry.originText);
         resumePosition.current = entry.position; setPosition(entry.position); setHasStarted(true);
       }
       setHistoryError('');
@@ -247,7 +277,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
       if (current) { setHistoryError('解析履歴を読み出せません'); setHistoryReady(true); }
     });
     return () => { current = false; };
-  }, [initial, mediaKey]);
+  }, [initial, mediaKey, savedBpm, savedOrigin, savedKnown]);
 
   useEffect(() => {
     if (!historyReady || !result || !historyDraft.current) return;
@@ -624,6 +654,13 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     pauseRef.current();stopPreview(true);
     const saved=source==='video'&&file?apply(bpm,origin):applyBpmOnly(bpm);
     if(!saved){setError('設定を保存できませんでした。動画の読み込みと端末の保存領域を確認して、もう一度お試しください。');return false;}
+    productionBaseline.current = {
+      bpm,
+      // A separate audio analysis only changes the video's BPM. Keep the
+      // video's production origin as the comparison baseline.
+      origin: source === 'video' && file ? origin : productionBaseline.current.origin,
+    };
+    if (historyDraft.current) historyDraft.current = {...historyDraft.current, baseline:{...productionBaseline.current}};
     setError('');return true;
   };
   useImperativeHandle(ref,()=>({save:saveDraft}));

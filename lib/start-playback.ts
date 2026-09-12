@@ -1,9 +1,18 @@
 type Media={currentTime:number;duration:number;playbackRate?:number;play:()=>Promise<void>};
 type ClockMedia=Media&{pause:()=>void;paused:boolean;readyState:number;seeking:boolean;playbackRate:number};
-type PreparedMedia=ClockMedia&{muted:boolean;addEventListener:unknown};
+type PreparedMedia=ClockMedia&{muted:boolean;addEventListener:unknown;currentSrc?:string;src?:string};
 type PositionMedia=Media&{readyState?:number;seeking?:boolean};
 const preparable=(media:Media):media is PreparedMedia=>typeof (media as PreparedMedia).pause==='function'&&typeof (media as PreparedMedia).addEventListener==='function';
 const clockMedia=(media:Media):media is ClockMedia=>typeof (media as ClockMedia).pause==='function'&&typeof (media as ClockMedia).paused==='boolean'&&typeof (media as ClockMedia).readyState==='number'&&typeof (media as ClockMedia).seeking==='boolean'&&typeof media.playbackRate==='number'&&Number.isFinite(media.playbackRate)&&media.playbackRate>0;
+// Decoder permission/readiness belongs to the media source, not each Play click.
+const preparedPairs=new WeakMap<PreparedMedia,{self:PreparedMedia;referenceSource:string;selfSource:string}>();
+const sourceIdentity=(media:PreparedMedia)=>`${media.currentSrc||''}\n${media.src||''}`;
+function rememberPair(reference:PreparedMedia,self:PreparedMedia){preparedPairs.set(reference,{self,referenceSource:sourceIdentity(reference),selfSource:sourceIdentity(self)});}
+function canResumePair(reference:PreparedMedia,self:PreparedMedia,targetSelf:(t:number)=>number){
+ const prepared=preparedPairs.get(reference);
+ return prepared?.self===self&&prepared.referenceSource===sourceIdentity(reference)&&prepared.selfSource===sourceIdentity(self)
+  &&reference.readyState>=1&&self.readyState>=1&&Math.abs(targetSelf(reference.currentTime)-self.currentTime)<=self.playbackRate*.075;
+}
 class CanceledStart extends Error{}
 /** Keep cancellation responsive even when an iPhone decoder's play promise is still pending. */
 function waitCurrent<T>(work:Promise<T>,isCurrent:()=>boolean):Promise<T>{
@@ -63,7 +72,7 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
   await waitCurrent(Promise.all([reference.play(),self.play()]),isCurrent);
   if(!isCurrent())throw new CanceledStart();
   await settleStartupClocks(reference,self,targetSelf,isCurrent);
-  accepted=true;return true;
+  rememberPair(reference,self);accepted=true;return true;
  }catch(error){if(error instanceof CanceledStart)return false;throw error;}
  finally{
   if(isCurrent()){
@@ -76,7 +85,19 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
 export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean,rateReady?:Promise<void>,targetReference?: (t:number)=>number){
  if(!isCurrent())return false;
  const initialTarget=targetSelf(reference.currentTime);
- if(self&&initialTarget>=0&&initialTarget<self.duration&&preparable(reference)&&preparable(self))return startPrepared(reference,self,targetSelf,isCurrent,rateReady);
+ if(self&&initialTarget>=0&&initialTarget<self.duration&&preparable(reference)&&preparable(self)){
+  if(canResumePair(reference,self,targetSelf)){
+   try{
+    // Play both in the gesture. Pending user seeks may finish naturally, without
+    // another muted warmup, rewind, seek, or fixed 250ms observation delay.
+    await waitCurrent(Promise.all([reference.play(),self.play(),rateReady]),isCurrent);
+    if(!isCurrent())throw new CanceledStart();
+    await settleStartupClocks(reference,self,targetSelf,isCurrent,false);
+    return true;
+   }catch(error){if(error instanceof CanceledStart)return false;throw error;}
+  }
+  return startPrepared(reference,self,targetSelf,isCurrent,rateReady);
+ }
  try{
   const referenceStart=reference.play();
   const target=targetReference&&self?self.currentTime:targetSelf(reference.currentTime);
@@ -92,9 +113,9 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
  * starts. Observe that startup once, then hold the ahead player until the other
  * catches it. This avoids introducing another decode delay through a final seek.
  * There is no background drift correction after this startup barrier. */
-async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean){
+async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean,observe=true){
  const initial=[reference.currentTime,self.currentTime],began=Date.now();
- await new Promise<void>((resolve,reject)=>{
+ if(observe)await new Promise<void>((resolve,reject)=>{
   const check=()=>{
    if(!isCurrent()){reject(new CanceledStart());return;}
    const elapsed=Date.now()-began;
@@ -144,7 +165,7 @@ export async function correctFollower(reference:Media,self:Media,targetSelf:(t:n
 export async function startDelayedFollower(reference:Media,self:Media,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean){
  if(!isCurrent())return false;
  try{await waitCurrent(self.play(),isCurrent);if(!isCurrent())return false;
-  if(preparable(reference)&&preparable(self))await settleStartupClocks(reference,self,targetSelf,isCurrent);
+  if(preparable(reference)&&preparable(self)){await settleStartupClocks(reference,self,targetSelf,isCurrent);rememberPair(reference,self);}
   else await correctFollower(reference,self,targetSelf,selfRate,undefined,isCurrent);
   return true;
  }

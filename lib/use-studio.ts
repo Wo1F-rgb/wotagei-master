@@ -85,10 +85,11 @@ export function useStudio(){
  const taps=useRef<number[][]>([[],[]]), audio=useRef<AudioContext|null>(null), lastTick=useRef(0), selfPlayPending=useRef(false);
  const lifecycle=useRef(true),stallCheck=useRef<ReturnType<typeof setTimeout>|null>(null);
  function cancelStallCheck(){if(stallCheck.current!==null)clearTimeout(stallCheck.current);stallCheck.current=null;}
+ const timingChanged=useRef(true);
  const snapshot=useRef({bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,soundSource});
  useLayoutEffect(()=>{snapshot.current={bpm,bpmKinds,origins,rate,loop,sources,camera,click,durations,soundSource};});
  // Save, seek and rapid input in the same event must all read the new beat origin.
- function setOrigins(action:SetStateAction<number[]>){const c=snapshot.current,next=typeof action==='function'?action(c.origins):action;snapshot.current={...c,origins:next};setOriginsState(next);}
+ function setOrigins(action:SetStateAction<number[]>){const c=snapshot.current,next=typeof action==='function'?action(c.origins):action;if(next.some((v,i)=>v!==c.origins[i]))timingChanged.current=true;snapshot.current={...c,origins:next};setOriginsState(next);}
  function setRate(value:number){
   if(!Number.isFinite(value)||value<MIN_PRACTICE_RATE||value>MAX_PRACTICE_RATE)return;
   if(youtubeActive.current&&stream.current&&youtube.current){
@@ -133,7 +134,7 @@ export function useStudio(){
   setTime(link.start);setRateState(1);setDurations(a=>[0,a[1]]);setLoop({enabled:false,start:0,end:0});resetTaps(0);
   setNotice('');
  }
- function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return false;if(running.current||starting.current||solo.current!==null||tapSession.current!==null)pause();resetTaps(index);const c=snapshot.current,next=c.bpm.map((n,i)=>i===index?value:n),kinds=c.bpmKinds.map((n,i)=>i===index?kind:n);snapshot.current={...c,bpm:next,bpmKinds:kinds};setBpm(next);setBpmKinds(kinds);return persistSettings(true);}
+ function applyBpm(index:number,value:number,kind:BpmKind='manual'){if(!Number.isFinite(value)||value<40||value>300)return false;if(running.current||starting.current||solo.current!==null||tapSession.current!==null)pause();resetTaps(index);const c=snapshot.current,next=c.bpm.map((n,i)=>i===index?value:n),kinds=c.bpmKinds.map((n,i)=>i===index?kind:n);snapshot.current={...c,bpm:next,bpmKinds:kinds};if(next.some((v,i)=>v!==c.bpm[i]))timingChanged.current=true;setBpm(next);setBpmKinds(kinds);return persistSettings(true);}
  function adjustOrigin(index:number,value:number){
   const c=snapshot.current;if(!Number.isFinite(value)||!c.sources[index]||c.durations[index]<=0)return;
   if(starting.current)pause();cancelCues();
@@ -145,7 +146,7 @@ export function useStudio(){
   pause();resetTaps(index);
   const nextBpm=c.bpm.map((n,i)=>i===index?value:n),nextOrigins=c.origins.map((n,i)=>i===index?origin:n),kinds=c.bpmKinds.map((n,i)=>i===index?'analysis' as BpmKind:n);
   // Tempo and phase belong to one analysis. Save them atomically, at full precision.
-  snapshot.current={...c,bpm:nextBpm,origins:nextOrigins,bpmKinds:kinds};setBpm(nextBpm);setOrigins(nextOrigins);setBpmKinds(kinds);if(!persistSettings(true))return false;
+  if(value!==c.bpm[index]||origin!==c.origins[index])timingChanged.current=true;snapshot.current={...c,bpm:nextBpm,origins:nextOrigins,bpmKinds:kinds};setBpm(nextBpm);setOrigins(nextOrigins);setBpmKinds(kinds);if(!persistSettings(true))return false;
   setNotice('');
   return true;
  }
@@ -204,7 +205,7 @@ export function useStudio(){
   const id=++playRequest.current;starting.current=true;running.current=false;setPreparing(true);
   const targetReference=soundChoice.current===1&&!camera?(t:number)=>mapSelfTime(t,origins[1],origins[0],bpm[1],bpm[0]):undefined;
   if(targetReference&&self.current){
-   const raw=targetReference(self.current.currentTime),target=clamp(raw,0,durations[0]);r.currentTime=target;setTime(target);
+   const raw=targetReference(self.current.currentTime),target=clamp(raw,0,durations[0]);if(Math.abs(r.currentTime-target)>(timingChanged.current?1e-7:rates.reference*.075))r.currentTime=target;setTime(r.currentTime);
    // If the reference would precede its file, begin at the first shared frame.
    // In particular, an iframe must not run ahead while its computed time is negative.
    if(raw<0){const own=clamp(mapSelfTime(target,origins[0],origins[1],bpm[0],bpm[1]),0,durations[1]);self.current.currentTime=own;setSelfTime(own);}
@@ -215,12 +216,12 @@ export function useStudio(){
    if(click)enableAudio();
    if(audio.current)void audio.current.resume();
    liveRateRequest.current++;liveRatePending.current=false;
-   if(!youtubeActive.current)r.playbackRate=rates.reference;
+   if(!youtubeActive.current&&r.playbackRate!==rates.reference)r.playbackRate=rates.reference;
    if(self.current&&sources[1]&&!camera){
-    self.current.playbackRate=clamp(sr,.25,4);
+    if(self.current.playbackRate!==clamp(sr,.25,4))self.current.playbackRate=clamp(sr,.25,4);
     const target=mapSelfTime(r.currentTime,origins[0],origins[1],bpm[0],bpm[1]);
     followerBeforeStart.current=target<0;
-    if(!targetReference)self.current.currentTime=clamp(target,0,durations[1]);
+    if(!targetReference){const position=clamp(target,0,durations[1]);if(Math.abs(self.current.currentTime-position)>(timingChanged.current?1e-7:sr*.075))self.current.currentTime=position;}
     else followerBeforeStart.current=false;
 
    }
@@ -234,14 +235,14 @@ export function useStudio(){
    }):undefined;
    const started=await startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current,rateReady,targetReference);
    if(!started)return;
-   starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice);
+   timingChanged.current=false;starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice);
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}
  }
  function applyFirstBeats(next:number[],save=false){
   const c=snapshot.current;
   try{firstBeatStart(next,c.bpm,c.durations);}catch(e){setNotice((e as Error).message);return false;}
-  pause();const nextLoop={...c.loop,enabled:false};snapshot.current={...c,origins:[...next],loop:nextLoop};setOrigins([...next]);setLoop(nextLoop);seek(next[0]);
-  if(save)saveSettings();return true;
+  pause();if(next.some((v,i)=>v!==c.origins[i]))timingChanged.current=true;const nextLoop={...c.loop,enabled:false};snapshot.current={...c,origins:[...next],loop:nextLoop};setOrigins([...next]);setLoop(nextLoop);seek(next[0]);
+  return !save||persistSettings(false);
  }
  async function previewFirstBeats(next:number[],lead=0){
   if(!applyFirstBeats(next))return;
@@ -339,7 +340,7 @@ export function useStudio(){
   setTapGrids(v=>v.map((n,i)=>i===index?grid:n));
   const value=Math.round(grid.bpm*1000)/1000;
   const c=snapshot.current,nextBpm=c.bpm.map((n,i)=>i===index?value:n),nextOrigins=c.origins.map((n,i)=>i===index?grid.origin:n),nextKinds=c.bpmKinds.map((n,i)=>i===index?'tap' as BpmKind:n);
-  snapshot.current={...c,bpm:nextBpm,origins:nextOrigins,bpmKinds:nextKinds};setBpm(nextBpm);setOrigins(nextOrigins);setBpmKinds(nextKinds);
+  if(value!==c.bpm[index]||grid.origin!==c.origins[index])timingChanged.current=true;snapshot.current={...c,bpm:nextBpm,origins:nextOrigins,bpmKinds:nextKinds};setBpm(nextBpm);setOrigins(nextOrigins);setBpmKinds(nextKinds);
 
  }
  function markOrigin(index:number){pause();const t=index===0?referenceMedia()?.currentTime:self.current?.currentTime;if(t!==undefined){adjustOrigin(index,t);setNotice('');}}
@@ -430,7 +431,7 @@ export function useStudio(){
  function resetSound(){soundChoice.current=0;setSoundSource(0);snapshot.current={...snapshot.current,soundSource:0};restoreComparisonAudio(referenceMedia(),self.current);}
  function changeSound(value:0|1){
   if(value===1&&(!sources[1]||camera)){setNotice('自分の音を使うには、音声付きの動画ファイルを選んでください。');return;}
-  pause();soundChoice.current=value;setSoundSource(value);if(youtubeActive.current)setRateState(1);snapshot.current={...snapshot.current,soundSource:value,...(youtubeActive.current?{rate:1}:{})};restoreComparisonAudio(referenceMedia(),self.current,value);
+  pause();if(value!==soundChoice.current)timingChanged.current=true;soundChoice.current=value;setSoundSource(value);if(youtubeActive.current)setRateState(1);snapshot.current={...snapshot.current,soundSource:value,...(youtubeActive.current?{rate:1}:{})};restoreComparisonAudio(referenceMedia(),self.current,value);
   setNotice('');
  }
  function cancelCues(){for(const node of cueNodes.current){try{node.stop();}catch{}}cueNodes.current.clear();cueKey.current='';cueLast.current=-1;cueTime.current=null;}

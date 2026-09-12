@@ -26,6 +26,7 @@ jobs:
       - run: node tests/built-worker.mjs
       - run: node tests/built-recorded-poses.mjs
       - run: node tests/built-rhythm-history.mjs
+      - run: node tests/built-beat-editor.mjs
       - run: node tests/built-sync.mjs
       - run: node tests/built-camera.mjs
       - run: node tests/built-compact-ui.mjs

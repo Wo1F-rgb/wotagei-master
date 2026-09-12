@@ -8,6 +8,7 @@ import {chromium} from 'playwright';
 import {rhythmFixture} from './audio-fixtures.mjs';
 const root=fileURLToPath(new URL('../dist-pages/',import.meta.url)),prefix='/wotagei-master/';
 const fixture=process.env.APP_TEST_FILE||fileURLToPath(new URL('./fixtures/synthetic-150-aac.mov',import.meta.url));
+const selfFixture=fileURLToPath(new URL('./fixtures/sync-120.mp4',import.meta.url));
 const server=createServer(async(req,res)=>{try{
  const route=decodeURIComponent(new URL(req.url,'http://localhost').pathname);if(!route.startsWith(prefix))throw Error('outside root');
  const file=resolve(root,route.slice(prefix.length)||'index.html');if(!file.startsWith(resolve(root)+sep))throw Error('outside root');
@@ -75,6 +76,54 @@ try{
  await page.getByLabel('解析BPM',{exact:true}).fill('147.23456789');
  await page.evaluate(()=>{const original=Storage.prototype.setItem;window.__restoreStorage=()=>{Storage.prototype.setItem=original;};Storage.prototype.setItem=function(key,value){if(String(key).startsWith('wotagei:video:'))throw new DOMException('Full','QuotaExceededError');return original.call(this,key,value);};});
  await close();assert.equal(await page.locator('main.editing').count(),1,'storage failure cannot be reported as a completed save');await page.evaluate(()=>window.__restoreStorage());await dismiss();await close();expected.bpm='147.23456789';await assertSaved(expected);
+ // A separately saved first-beat edit is the production baseline. Reopening
+ // analysis must not let its older, intentionally retained draft overwrite it.
+ const regression=await browser.newPage({viewport:{width:390,height:700}}),regressionErrors=[];
+ try{
+  regression.on('pageerror',e=>regressionErrors.push(e.message));
+  await regression.addInitScript(()=>{window.qaTools={};document.modelContext={registerTool(t){window.qaTools[t.name]=t;}};});
+  await regression.goto(process.env.APP_TEST_URL||`http://127.0.0.1:${server.address().port}${prefix}`);
+  const rbutton=name=>regression.getByRole('button',{name,exact:true});
+  const rfield=()=>regression.getByLabel('解析結果の1拍目の位置（秒）',{exact:true});
+  const rstored=()=>regression.evaluate(()=>Object.entries(localStorage).filter(([k])=>k.startsWith('wotagei:video:')).map(([,v])=>JSON.parse(v)).sort((a,b)=>a.origin-b.origin));
+  await regression.getByLabel('お手本の動画を選ぶ',{exact:true}).setInputFiles(fixture);
+  await regression.getByLabel('自分の動画を選ぶ',{exact:true}).setInputFiles(selfFixture);
+  await regression.waitForFunction(()=>[...document.querySelectorAll('.video-stage video')].every(v=>v.duration>=12));
+  await rbutton('お手本の設定').click();await rbutton('解析を開始').click();await regression.getByLabel('解析BPM',{exact:true}).waitFor({timeout:90000});
+  await rfield().fill('3.9');await rbutton('保存して戻る').click();
+  assert.equal((await rstored()).find(v=>v.kind==='analysis')?.origin,3.9,'analysis draft baseline');
+  await regression.waitForFunction(()=>window.qaTools.configure_practice_tempo);
+  await regression.evaluate(()=>window.qaTools.configure_practice_tempo.execute({selfBpm:120,rate:1}));
+  await rbutton('1拍目を合わせる').click();
+  const first=regression.getByLabel('お手本の1拍目（秒）',{exact:true});await first.fill('4.3');await first.press('Tab');await rbutton('この2点を保存').click();
+  assert.equal((await rstored()).find(v=>v.kind==='analysis')?.origin,4.3,'first-beat edit production baseline');
+  await rbutton('お手本の設定').click();await regression.getByLabel('解析BPM',{exact:true}).waitFor({timeout:90000});
+  assert.equal(await rfield().inputValue(),'4.3','reopening analysis follows the saved first-beat baseline');
+  await rbutton('保存して戻る').click();
+  assert.equal((await rstored()).find(v=>v.kind==='analysis')?.origin,4.3,'saving reopened analysis preserves first-beat baseline');
+  // Legacy rows have no baseline metadata. Once the production origin moves,
+  // migrating that row must follow the saved video grid instead of reviving its
+  // stale draft. A subsequent save should persist the new baseline.
+  await regression.evaluate(()=>new Promise((resolve,reject)=>{
+   const request=indexedDB.open('wotagei-rhythm-history-v1');
+   request.onerror=()=>reject(request.error);
+   request.onsuccess=()=>{const db=request.result,tx=db.transaction('results','readwrite'),store=tx.objectStore('results');
+    const rows=store.getAll();rows.onerror=()=>reject(rows.error);rows.onsuccess=()=>{for(const row of rows.result){delete row.baseline;store.put(row);}};
+    tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);};
+  }));
+  await rbutton('1拍目を合わせる').click();
+  const migratedFirst=regression.getByLabel('お手本の1拍目（秒）',{exact:true});await migratedFirst.fill('5.1');await migratedFirst.press('Tab');await rbutton('この2点を保存').click();
+  await regression.reload();
+  await regression.getByLabel('お手本の動画を選ぶ',{exact:true}).setInputFiles(fixture);
+  await regression.getByLabel('自分の動画を選ぶ',{exact:true}).setInputFiles(selfFixture);
+  await regression.waitForFunction(()=>[...document.querySelectorAll('.video-stage video')].every(v=>v.duration>=12));
+  await rbutton('お手本の設定').click();await regression.getByLabel('解析BPM',{exact:true}).waitFor({timeout:90000});
+  assert.equal(await rfield().inputValue(),'5.1','legacy analysis follows configured production origin during migration');
+  await rbutton('保存して戻る').click();
+  const migratedRows=await regression.evaluate(()=>new Promise((resolve,reject)=>{const request=indexedDB.open('wotagei-rhythm-history-v1');request.onerror=()=>reject(request.error);request.onsuccess=()=>{const db=request.result,tx=db.transaction('results','readonly'),get=tx.objectStore('results').getAll();get.onerror=()=>reject(get.error);get.onsuccess=()=>{db.close();resolve(get.result);};};}));
+  assert.ok(migratedRows.some(v=>v.baseline&&v.baseline.origin===5.1),'legacy analysis stores the migrated production baseline');
+  assert.deepEqual(regressionErrors,[]);
+ }finally{await regression.close();}
  assert.deepEqual(errors,[]);
  console.log('Built app: analysis default, settings-only save, beat/midpoint fit and drag, cross-tab edits, invalid input guard, history reload, no implicit adoption verified.');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

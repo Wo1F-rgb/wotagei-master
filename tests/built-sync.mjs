@@ -95,7 +95,9 @@ try{
  for(const master of [0,1])for(const stalled of [0,1]){
   await dismiss();await button(`${master?'自分':'お手本'}の曲を主役にする`).click();await origins([1.25,.8]);await play();
   await page.evaluate(i=>{const v=document.querySelectorAll('.video-stage video')[i];window.qaStalled=v;v.pause();Object.defineProperty(v,'readyState',{configurable:true,get:()=>2});v.dispatchEvent(new Event('waiting'));},stalled);
-  await page.waitForFunction(()=>document.querySelectorAll('.video-stage video').length===2&&[...document.querySelectorAll('.video-stage video')].every(v=>v.paused),{},{timeout:1500});
+  // Native pause is synchronous; React publishes the stopped state next. Wait
+  // for both, rather than asserting between those two parts of the same stop.
+  await page.waitForFunction(()=>document.querySelectorAll('.video-stage video').length===2&&[...document.querySelectorAll('.video-stage video')].every(v=>v.paused)&&!window.qaTools.read_practice_state.execute({}).playing,{},{timeout:1500});
   assert.equal((await state()).playing,false,'a stalled decoder stops both once instead of leaving a permanent beat error');
   await page.evaluate(()=>{delete window.qaStalled.readyState;});await measure(`recover decoder ${stalled} master ${master}`,{master});
  }

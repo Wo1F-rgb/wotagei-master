@@ -8,6 +8,8 @@ export type RhythmHistoryEntry = {
   bpmText: string;
   originText: string;
   position: number;
+  /** Settings that were applied to the production video when this draft was saved. */
+  baseline?: {bpm: number; origin: number};
 };
 type StoredEntry = RhythmHistoryEntry & {version: 1; updatedAt: number; bytes: number};
 export const RHYTHM_HISTORY_LIMITS = {items: 10, bytes: 160 * 1024 * 1024};
@@ -25,7 +27,8 @@ export function validRhythmHistory(value: unknown): value is StoredEntry {
     && numbers(r.beats, 12000) && numbers(r.downbeats, 12000) && numbers(r.waveform, 60001)
     && (g === null || Boolean(g && finite(g.bpm) && g.bpm >= 40 && g.bpm <= 300 && finite(g.origin) && g.origin >= 0
       && finite(g.errorMs) && finite(g.driftMs) && finite(g.coverage) && finite(g.beatCount) && typeof g.variable === 'boolean'))
-    && (v.audio === null || Boolean(v.source === 'audio' && v.audio.blob instanceof Blob && typeof v.audio.name === 'string' && finite(v.audio.lastModified)));
+    && (v.audio === null || Boolean(v.source === 'audio' && v.audio.blob instanceof Blob && typeof v.audio.name === 'string' && finite(v.audio.lastModified)))
+    && (v.baseline === undefined || Boolean(v.baseline && finite(v.baseline.bpm) && v.baseline.bpm >= 40 && v.baseline.bpm <= 300 && finite(v.baseline.origin) && v.baseline.origin >= 0));
 }
 
 /** A tab-local copy survives navigation even if IndexedDB is unavailable/full. */

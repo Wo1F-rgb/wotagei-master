@@ -51,3 +51,88 @@ YouTubeは[公式IFrame API](https://developers.google.com/youtube/iframe_api_re
 お手本146.877／自分139.992 BPMという設定で、主役2種類×指定倍率0.75・1・1.25の6通りを実測した。お手本主役では指定倍率がそのまま適用され、最大時計差は26.9ms。自分主役ではYouTubeが0.7・0.95・1.2倍へ丸められ、実際の練習倍率は約0.734427・0.996722・1.259018倍になった。その実測倍率に合わせた両方の実効BPMは一致し、最大時計差は79.0msだった。ケースごとに先頭へ戻し、自分の動画の終了前だけを測定した。
 
 この検証はブラウザのメディア時計と描画継続の検査で、楽曲に対する解析グリッド自体の正しさ、踊りの動きの一致、スピーカーから聞こえる音の遅延を保証するものではない。自動解析が別の拍を「1」と解釈していた場合は、拍の起点を手動で修正する必要がある。YouTubeは時刻の応答が粗く、ファイル2本と同じ精度にはならない場合がある。iPhone Safari実機での検証は未実施。
+
+
+## 2026-09-12: leaving first-beat edits
+
+Reproduced the reported paused grid offset using BPM 150.119 / 139.879 and
+saved origins 3.9 / 1.0 seconds. Opening the first-beat editor, moving the
+reference trial position to 4.3, and closing left actual media clocks at 4.3 / 1.0.
+That is 0.4 reference seconds (about one beat) apart. The white grids exposed
+this real position difference; the BPM conversion itself was correct.
+
+First-beat edits now keep the original origins for the edit session. Leaving
+without Save restores them and positions the follower once relative to the
+audible master's actual time. Close, switching to comparison, full screen,
+opening another configuration, and source changes finish the edit session.
+Saving commits the edited origins; a rejected storage write keeps the editor
+open. Preview origins cannot silently leak into the next practice session.
+
+`tests/built-beat-editor.mjs` failed on the prior build with a measured 0.4 s
+gap and passes with the fix. It checks both audio masters and edited sources,
+with and without playback preview, navigation exits, failed save recovery,
+actual media clock alignment and DOM white-line coordinates. Manual arrows
+still move beats relative to the song while paused; steady playback does not
+add repeated seeks. The new test also gates Pages publication.
+
+Verification used real Chromium media elements at a 390 × 700 viewport and
+synthetic test videos; actual iPhone Safari was not available.
+
+
+## 2026-09-12: repeated pause/resume
+
+The first-start decoder warmup was previously repeated on every Play click,
+including full-screen pause/resume. Its opaque cover hid both videos. A native
+pair now remembers successful preparation for the same two media elements and
+source URLs. Replacing either source invalidates that readiness.
+
+For an already prepared pair near its mapped position, Play starts both sources
+without muted warmup, rewinding, or the fixed 250 ms cold-start observation.
+A real startup clock difference over 25 ms can still hold the ahead source once;
+there is no periodic seeking during playback. A larger paused mismatch over
+75 ms, an explicit beat edit, or changing the audio master positions the
+follower before starting. Even a
+1 ms manual nudge uses the exact new mapping; the ordinary-resume tolerance
+must not swallow an intentional edit. New media still use cold preparation.
+Pre-roll follower entry remembers successful preparation too.
+
+The full-video preparation cover and the React `preparing` mute override were
+removed. The start button remains cancelable during genuine decoder waits;
+errors remain visible. The preparation code owns temporary cold-start muting.
+
+The built beat-editor test additionally checks 12 ordinary pause/resumes across
+both audio masters and normal/full-screen views. It observes native Play/Pause
+calls, seek events, actual clock phase, and cover insertion: no repeated muted
+warmup, no rewind seeks, and at most one real startup clock hold. Unit cases
+cover source replacement, asymmetric warm launch latency and cancellation.
+
+The decoder-stall browser test waits for both native media to pause AND React's
+stopped state. Native pause happens synchronously before React publishes the
+state; checking only the native predicate raced that same stop operation.
+
+## 2026-09-12: saved analysis drafts
+
+A second phase regression was reproduced: save an analysis origin at 3.9 s,
+save 4.3 s in the separate first-beat editor, reopen analysis, then Save. The old
+analysis draft could restore 3.9 s. History now records the production BPM/origin
+baseline so external saved changes win while intentionally unsaved new drafts
+still survive navigation. Separate-audio analysis retains its own audio origin
+and only applies BPM to the video. The built history test exercises real audio
+analysis and this edit/reopen/save sequence.
+
+Legacy histories without baseline metadata adopt the currently configured video
+grid on migration; their old draft cannot overwrite a later first-beat edit.
+A separate regression removes baseline metadata from a real IndexedDB history,
+changes the saved origin to 5.1 s, reloads, and verifies both the current value
+and the migrated metadata. An as-yet unconfigured video can still restore its
+legacy draft.
+
+Validation for these changes: 232 unit tests, type checking and production
+build passed. The full sync browser suite passed 47 runs / 24 rate combinations
+and 4 loop boundaries; the largest sampled native clock gap was 62.2 ms.
+The beat-editor/resume suite passed with both the public synthetic fixtures
+and the two original videos previously provided by the user. Each included
+12 ordinary stop/resumes across both masters and normal/full-screen views.
+The originals were read locally and were not added to the public repository.
+The compact UI, full-screen viewer, and analysis-history browser tests passed.
+These are Chrome tests, not measurements on a physical iPhone.
