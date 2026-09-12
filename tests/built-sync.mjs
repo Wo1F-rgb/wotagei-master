@@ -66,7 +66,7 @@ try{
  // Genuine ONNX inference and UI Save, not seeded/fabricated analysis results.
  for(let i=0;i<2;i++){
   await dismiss();await button(`${i?'自分':'お手本'}の設定`).click();await button('解析を開始').click();await page.getByLabel('解析BPM',{exact:true}).waitFor({timeout:90000});
-  const expected={bpm:Number(await page.getByLabel('解析BPM',{exact:true}).inputValue()),origin:Number(await page.getByLabel('1拍目の位置（秒）',{exact:true}).inputValue())};
+  const expected={bpm:Number(await page.getByLabel('解析BPM',{exact:true}).inputValue()),origin:Number(await page.getByLabel('解析結果の1拍目の位置（秒）',{exact:true}).inputValue())};
   await button('保存して戻る').click();const c=await state();assert.equal(c.bpm[i],expected.bpm);assert.equal(c.origins[i],expected.origin);assert.equal(c.bpmKinds[i],'analysis');
   await measure(`analysis ${i} saved immediately`);
  }
