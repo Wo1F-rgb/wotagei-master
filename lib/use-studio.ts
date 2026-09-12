@@ -153,18 +153,21 @@ export function useStudio(){
  }
  function finishTimingEdit(save=false){
   pause();const saved=!save||persistSettings(false);
+  alignPausedFollower();return saved;
+ }
+ function alignPausedFollower(){
   const c=snapshot.current,r=referenceMedia(),s=self.current;
-  if(!r||!s||c.camera||c.sources.some(v=>!v)||c.bpmKinds.some(v=>v==='unset')||c.durations.some(d=>d<=0))return saved;
+  if(!r||!s||c.camera||c.sources.some(v=>!v)||c.bpmKinds.some(v=>v==='unset')||c.durations.some(d=>d<=0))return;
   const master=soundChoice.current,media=master===0?s:r;
   const target=master===0?mapSelfTime(seekPositions.current.read(r),c.origins[0],c.origins[1],c.bpm[0],c.bpm[1]):mapSelfTime(seekPositions.current.read(s),c.origins[1],c.origins[0],c.bpm[1],c.bpm[0]);
   const position=clamp(target,0,c.durations[1-master]);seekPositions.current.seek(media,position);
-  if(master===0)setSelfTime(position);else setTime(position);return saved;
+  if(master===0)setSelfTime(position);else setTime(position);
  }
  function nudgeTiming(direction:-1|1):NudgeResult{
   const c=snapshot.current,index=soundChoice.current===0?1:0;
   if(starting.current||recording||optimizing||c.camera||c.sources.some(v=>!v)||c.bpmKinds.some(v=>v==='unset'))return {index,delta:0,reason:'2本の動画とBPMを設定してください'};
   const result=nudgeBeatOrigin(c.origins,c.durations,soundChoice.current,direction,nudgeStepChoice.current);
-  if(result.delta&&result.origin!==undefined){pause();setOrigins(v=>v.map((n,i)=>i===index?result.origin!:n));if(!persistSettings(true))return {...result,reason:'拍は変更しましたが保存できませんでした'};}
+  if(result.delta&&result.origin!==undefined){pause();setOrigins(v=>v.map((n,i)=>i===index?result.origin!:n));alignPausedFollower();if(!persistSettings(true))return {...result,reason:'拍は変更しましたが保存できませんでした'};}
   return result;
  }
  async function makeLightVideo(){const file=files.current[1];if(!file||camera||optimizing)return;pause();optimization.current?.abort();const task=new AbortController();optimization.current=task;setOptimizing(true);setOptimizeProgress(0);try{const blob=await optimizeVideo(file,task.signal,n=>{if(lifecycle.current&&!task.signal.aborted)setOptimizeProgress(n);});if(!lifecycle.current||task.signal.aborted||files.current[1]!==file||stream.current)return;const url=URL.createObjectURL(blob);urls.current.add(url);originalSelf.current??=sources[1];restoreTime.current=self.current?.currentTime||0;setSources(v=>[v[0],{...v[1]!,url}]);setOptimized(true);setNotice('');}catch(e){if(lifecycle.current&&!task.signal.aborted)setNotice(e instanceof Error?e.message:'軽量化できませんでした。');}finally{if(lifecycle.current&&optimization.current===task)setOptimizing(false);}}

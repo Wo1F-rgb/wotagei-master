@@ -72,10 +72,10 @@ try{
  // Save remains a commit; both white grids and real frames use the edited origins.
  await button('お手本の曲を主役にする').click();await button('1拍目を合わせる').click();await edit(0,4.3);await edit(1,1.2);await button('この2点を保存').click();await checkPaused('saved edit',[4.3,1.2]);
  assert.ok((await stored()).every(([,v])=>[4.3,1.2].includes(v.origin)));
- // Manual arrows still shift the beat relative to the song while paused. Only
- // leaving the editor or explicitly starting sync moves the corresponding video.
+ // Manual arrows persist the beat relative to the song and immediately move
+ // only the follower, so paused comparison already shows the corrected pose.
  await page.locator('.track-nudge').last().click();const adjusted=await state();assert.ok(adjusted.origins[1]>1.2);
- const manual=await inspect();assert.ok(Math.abs(manual.ones[0]-manual.ones[1])>.001);
+ await checkPaused('manual arrow applies immediately',adjusted.origins);
  await button('同期再生').click();await button('停止').waitFor({timeout:15000});const seeks=await page.evaluate(()=>window.qaSeeks.length);
  await page.waitForTimeout(450);const playing=await inspect(),[r,s]=playing.media;
  assert.ok(Math.abs((s.time-playing.c.origins[1])*playing.c.bpm[1]-(r.time-playing.c.origins[0])*playing.c.bpm[0])/playing.c.bpm[0]<.09);

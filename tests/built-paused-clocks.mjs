@@ -48,6 +48,28 @@ try{
  await button('1拍目を合わせる').click();
  for(const [i,value] of [3.9,1].entries()){const field=page.getByLabel(`${i?'自分':'お手本'}の1拍目（秒）`,{exact:true});await field.fill(String(value));await field.press('Tab');}
  await button('この2点を保存').click();await check('baseline');
+ // Reproduce the visible-browser workflow without clock delay injection:
+ // arrows and completed drags must update the paused follower immediately.
+ for(const master of [0,1]){
+  await button(`${master?'自分':'お手本'}の曲を主役にする`).click();
+  await page.locator('.track-seek').getByRole('slider').press('PageUp');await settled();
+  for(const step of [.1,.01,.001,.0005]){
+   await button('練習速度と鳴らす音を設定').click();await page.getByLabel('矢印1回のずらし量',{exact:true}).selectOption(String(step));await button('完了').click();
+   const before=await inspect();
+   await page.locator('.track-nudge').last().click();const after=await check(`paused nudge master ${master} step ${step}`);
+   assert.equal(after.native[master].time,before.native[master].time,'nudge keeps the audible master at its current frame');
+   assert.equal(after.state.origins[master],before.state.origins[master],'nudge never changes the master beat');
+   assert.ok(Math.abs(after.state.origins[1-master]-before.state.origins[1-master]-step)<1e-6,'nudge changes the beat metadata by exactly the selected step');
+   assert.ok(Math.abs(after.native[1-master].time-before.native[1-master].time-step)<.003,'paused follower frame moves with its new beat');
+   await page.locator('.track-nudge').first().click();await check('reverse nudge');
+  }
+  const track=page.locator(`.track-${1-master} .track-grid-adjust`),box=await track.boundingBox(),before=await inspect();
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+10,box.y+box.height/2);await page.mouse.up();
+  const dragged=await check(`completed grid drag master ${master}`);assert.equal(dragged.native[master].time,before.native[master].time);
+ }
+ await button('お手本の曲を主役にする').click();await button('1拍目を合わせる').click();
+ for(const [i,value] of [3.9,1].entries()){const field=page.getByLabel(`${i?'自分':'お手本'}の1拍目（秒）`,{exact:true});await field.fill(String(value));await field.press('Tab');}
+ await button('この2点を保存').click();await check('restored baseline');
  // Seek through the ordinary UI to a new point, with asynchronous clock reads.
  await page.evaluate(()=>{window.qaClockLag=true;});
  const slider=page.locator('.track-seek').getByRole('slider');
@@ -64,6 +86,14 @@ try{
   const field=page.getByLabel(`${master?'自分':'お手本'}の1拍目（秒）`,{exact:true});
   await field.fill(String([3.9,1][master]+.4));await field.press('Tab');await button('閉じる').click();
   await check(`close during master ${master} seek`);
+ }
+ // Rapid clicks may arrive before an earlier native seek publishes its clock.
+ // Keep every edit and finish at the latest target, without moving the master.
+ for(const master of [0,1]){
+  await button(`${master?'自分':'お手本'}の曲を主役にする`).click();await settled();const before=await inspect();
+  await page.evaluate(()=>{const buttons=document.querySelectorAll('.track-nudge');for(let n=0;n<12;n++)buttons[n<9?1:0].click();});
+  const after=await check(`rapid delayed nudges master ${master}`);assert.equal(after.native[master].time,before.native[master].time);
+  assert.ok(Math.abs(after.state.origins[1-master]-before.state.origins[1-master]-.003)<1e-6);
  }
  // First-ever comparison preparation must retain an outstanding seek too.
  await button('お手本の曲を主役にする').click();await button('1拍目を合わせる').click();
@@ -95,5 +125,5 @@ try{
  const after=await inspect();assert.equal(after.native[0].time,before.native[0].time);
  assert.ok(Math.abs(after.ones[1]-after.ones[0])>3,'a real follower offset stays visible');
  assert.deepEqual(errors,[]);
- console.log('Paused clocks: delayed seek/state updates, pending edit closure, cold preview, both masters at 3 speeds, forward/backward fullscreen seek-resume and honest offset display verified.');
+ console.log('Paused clocks: immediate manual arrows/drags, rapid nudges, delayed seek/state updates, pending edit closure, cold preview, both masters at 3 speeds, forward/backward fullscreen seek-resume and honest offset display verified.');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
