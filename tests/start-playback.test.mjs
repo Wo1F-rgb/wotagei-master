@@ -3,19 +3,21 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 class ResumeMedia {
  duration=60;readyState=4;seeking=false;playbackRate=1;muted=false;paused=true;value=2;since=0;starts=0;seeks=0;pauses=0;src='clip.mp4';currentSrc='clip.mp4';playDelay=0;
  addEventListener(){}
- get currentTime(){return this.value+(this.paused?0:(performance.now()-this.since)/1000*this.playbackRate);}
+ get currentTime(){return this.value+(this.paused?0:Math.max(0,(performance.now()-this.since)/1000)*this.playbackRate);}
  set currentTime(value){this.value=value;this.since=performance.now();this.seeks++;}
  pause(){this.value=this.currentTime;this.paused=true;this.pauses++;}
  async play(){this.starts++;if(this.playDelay)await delay(this.playDelay);this.since=performance.now();this.paused=false;}
 }
-test('a prepared pair resumes repeatedly without muted warmups, rewinds or fixed observation waits',async()=>{
+test('a prepared pair resumes repeatedly immediately without muted warmups or rewinds',async()=>{
  const r=new ResumeMedia(),s=new ResumeMedia();s.playbackRate=150.119/139.879;
  const map=t=>1+(t-2)*s.playbackRate;
  assert.equal(await startComparison(r,s,map,s.playbackRate,()=>true),true);r.pause();s.pause();
  for(let i=0;i<5;i++){
-  const before=[r.starts,s.starts,r.seeks,s.seeks,r.pauses,s.pauses],began=performance.now();
-  assert.equal(await startComparison(r,s,map,s.playbackRate,()=>true),true);
-  assert.ok(performance.now()-began<150,'warm resume has no 250ms cold-start observation');
+  const before=[r.starts,s.starts,r.seeks,s.seeks,r.pauses,s.pauses];
+  const work=startComparison(r,s,map,s.playbackRate,()=>true);
+  assert.equal(r.paused,false,'reference starts immediately, before the clock audit finishes');
+  assert.equal(s.paused,false,'follower starts immediately, before the clock audit finishes');
+  assert.equal(await work,true);
   assert.deepEqual([r.starts,s.starts,r.seeks,s.seeks,r.pauses,s.pauses],[before[0]+1,before[1]+1,...before.slice(2)]);
   await delay(20);r.pause();s.pause();assert.ok(Math.abs(map(r.currentTime)-s.currentTime)<.025*s.playbackRate);
  }
@@ -29,6 +31,17 @@ test('warm resume corrects asymmetric decoder launch once, without another seek'
  const seeks=[r.seeks,s.seeks],starts=[r.starts,s.starts];await startComparison(r,s,map,1.25,()=>true);
  assert.deepEqual([r.seeks,s.seeks],seeks);assert.deepEqual([r.starts,s.starts],[starts[0]+2,starts[1]+1]);
  assert.ok(Math.abs(map(r.currentTime)-s.currentTime)<.03);r.pause();s.pause();
+});
+test('warm resume observes an audio-clock stall after play has already resolved',async()=>{
+ const r=new ResumeMedia(),s=new ResumeMedia();s.playbackRate=1.25;const map=t=>t*1.25;
+ await startComparison(r,s,map,1.25,()=>true);r.pause();s.pause();
+ // The promise resolves immediately, but the audio clock starts 110ms later.
+ s.play=async()=>{s.starts++;s.since=performance.now()+110;s.paused=false;};
+ const seeks=[r.seeks,s.seeks],starts=[r.starts,s.starts];
+ const work=startComparison(r,s,map,1.25,()=>true);assert.equal(r.paused,false);assert.equal(s.paused,false);
+ await work;await delay(150);
+ assert.ok(Math.abs(map(r.currentTime)-s.currentTime)<.03,'late clock start must not leave a persistent phase error');
+ assert.deepEqual([r.seeks,s.seeks],seeks);assert.deepEqual([r.starts,s.starts],[starts[0]+2,starts[1]+1]);r.pause();s.pause();
 });
 test('canceling a warm start leaves replacement media untouched',async()=>{
  const r=new ResumeMedia(),s=new ResumeMedia();await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();

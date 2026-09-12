@@ -87,7 +87,8 @@ pair now remembers successful preparation for the same two media elements and
 source URLs. Replacing either source invalidates that readiness.
 
 For an already prepared pair near its mapped position, Play starts both sources
-without muted warmup, rewinding, or the fixed 250 ms cold-start observation.
+without muted warmup or rewinding. The one-time 250 ms clock observation
+runs while those frames play; it does not obscure or rewind either video.
 A real startup clock difference over 25 ms can still hold the ahead source once;
 there is no periodic seeking during playback. A larger paused mismatch over
 75 ms, an explicit beat edit, or changing the audio master positions the
@@ -136,3 +137,9 @@ and the two original videos previously provided by the user. Each included
 The originals were read locally and were not added to the public repository.
 The compact UI, full-screen viewer, and analysis-history browser tests passed.
 These are Chrome tests, not measurements on a physical iPhone.
+
+The first publication gate exposed a 93.6 ms warm-start clock error on Linux
+Chromium that did not appear in local Windows runs. Removing clock observation
+entirely let the audio clock stall just after Play resolved. The corrected warm
+path starts both videos immediately but retains the one-time observation while
+they play. It still skips muted warmup and rewind, and never hides the frames.

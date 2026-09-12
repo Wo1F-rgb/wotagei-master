@@ -89,10 +89,11 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
   if(canResumePair(reference,self,targetSelf)){
    try{
     // Play both in the gesture. Pending user seeks may finish naturally, without
-    // another muted warmup, rewind, seek, or fixed 250ms observation delay.
+    // another muted warmup, rewind or seek. Keep observing startup clocks
+    // while frames play: an audio clock can stall after play() resolves.
     await waitCurrent(Promise.all([reference.play(),self.play(),rateReady]),isCurrent);
     if(!isCurrent())throw new CanceledStart();
-    await settleStartupClocks(reference,self,targetSelf,isCurrent,false);
+    await settleStartupClocks(reference,self,targetSelf,isCurrent);
     return true;
    }catch(error){if(error instanceof CanceledStart)return false;throw error;}
   }
@@ -113,9 +114,9 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
  * starts. Observe that startup once, then hold the ahead player until the other
  * catches it. This avoids introducing another decode delay through a final seek.
  * There is no background drift correction after this startup barrier. */
-async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean,observe=true){
+async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean){
  const initial=[reference.currentTime,self.currentTime],began=Date.now();
- if(observe)await new Promise<void>((resolve,reject)=>{
+ await new Promise<void>((resolve,reject)=>{
   const check=()=>{
    if(!isCurrent()){reject(new CanceledStart());return;}
    const elapsed=Date.now()-began;
