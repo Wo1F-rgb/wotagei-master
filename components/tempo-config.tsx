@@ -12,7 +12,7 @@ export function TempoConfig({ref,mediaKey,preview,mainPlaying,active,remote=fals
  const [mode,setMode]=useState('auto');
  const analysis=useRef<RhythmAnalysisHandle>(null);
  useImperativeHandle(ref,()=>({save:()=>live||mode!=='auto'?true:analysis.current?.save()??true}));
- if(live)return <div className="tempo-config"><h2>カメラはお手本に合わせて踊る</h2><p>ライブ映像は倍速にできません。録画した動画ならBPM解析・同期ができます。</p></div>;
+ if(live)return <div className="tempo-config"><h2>ライブ</h2></div>;
  return <div className="tempo-config">
   <Tabs value={mode} onValueChange={v=>{pause();if(tapRecording)finishTap();setMode(String(v));}} className="tempo-methods">
    <TabsList aria-label="BPMを決める方法"><TabsTrigger value="auto">自動解析</TabsTrigger><TabsTrigger value="tap">手動</TabsTrigger></TabsList>

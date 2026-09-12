@@ -120,7 +120,6 @@ function restoredAudio(entry: RhythmHistoryEntry | null) {
 export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, mainPlaying, file, remote, pause, apply, applyBpmOnly }: Props) {
   const initial = useRef(mediaKey ? rhythmHistory().peek(mediaKey) : null).current;
   const [historyReady, setHistoryReady] = useState(Boolean(initial) || !mediaKey);
-  const [historyMessage, setHistoryMessage] = useState(initial ? '前回の解析結果と調整内容を復元しました。' : '');
   const [source, setSource] = useState<SourceKind>(initial?.source ?? (file ? 'video' : 'audio'));
   const [audioFile, setAudioFile] = useState<File | null>(() => restoredAudio(initial));
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -133,6 +132,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [historyError, setHistoryError] = useState('');
   const [hasStarted, setHasStarted] = useState(Boolean(initial));
   const resumePosition = useRef(initial?.position ?? 0);
   const historyDraft = useRef<RhythmHistoryEntry | null>(initial);
@@ -225,6 +225,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     setOriginText('');
     setMessage('');
     setError('');
+    setHistoryError('');
     setHasStarted(false);
   }, []);
 
@@ -239,11 +240,11 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
         setSource(entry.source); setAudioFile(restoredAudio(entry));
         setResult(entry.result); setBpmText(entry.bpmText); setOriginText(entry.originText);
         resumePosition.current = entry.position; setPosition(entry.position); setHasStarted(true);
-        setHistoryMessage('前回の解析結果と調整内容を復元しました。');
       }
+      setHistoryError('');
       setHistoryReady(true);
     }).catch(() => {
-      if (current) { setHistoryReady(true); setHistoryMessage('前回の解析結果を読み出せませんでした。再解析はできます。'); }
+      if (current) { setHistoryError('解析履歴を読み出せません'); setHistoryReady(true); }
     });
     return () => { current = false; };
   }, [initial, mediaKey]);
@@ -253,9 +254,8 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     const write = ++historyWrite.current, persistent = historyEnabled();
     void rhythmHistory().save(historyDraft.current, persistent).then(saved => {
       if (!mountedRef.current || write !== historyWrite.current) return;
-      setHistoryMessage(saved ? '解析結果と調整内容をこの端末に保存しました。'
-        : persistent ? '端末への保存に失敗しました。解析結果はこのタブを閉じるまで保持します。'
-          : '履歴保存がOFFのため、解析結果はこのタブ内で保持します。');
+      if (!persistent) { setHistoryError(''); return; }
+      setHistoryError(saved ? '' : '解析履歴を保存できません');
     });
   }, [historyReady, result, bpmText, originText, source, audioFile, mediaKey]);
 
@@ -545,7 +545,6 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     setSource('audio');
     setPosition(0);
     setError('');
-    setMessage('別音声を選択しました。動画と音声の時刻はずれる場合があります。');
   };
 
   const startAnalysis = async () => {
@@ -560,6 +559,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     setBpmText('');
     setOriginText('');
     setError('');
+    setHistoryError('');
     setHasStarted(true);
     setMessage('音声を準備中…');
     try {
@@ -569,17 +569,11 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
       if (controller.signal.aborted || !mountedRef.current) return;
       setResult(next);setError('');
       if (next.grid) { setBpmText(String(next.grid.bpm)); setOriginText(String(next.grid.origin)); }
-      if (!next.beats.length || !next.grid) {
-        setMessage('拍を十分に検出できませんでした。別の音声か、手動の拍設定を試してください。');
-      } else if (next.grid.variable) {
-        setMessage('検出拍が一定の拍として安定しません。固定グリッドの自動適用はできません。');
-      } else {
-        setMessage('波形と白線を確認し、「1」の位置を合わせてください。');
-      }
+      setMessage('');
     } catch (cause) {
       if (!controller.signal.aborted && mountedRef.current) {
         setError(cause instanceof Error ? cause.message : '音声を解析できませんでした。');
-        setMessage('解析できませんでした。');
+        setMessage('');
       }
     } finally {
       if (mountedRef.current && controllerRef.current === controller) {
@@ -593,7 +587,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     controllerRef.current?.abort();
     controllerRef.current = null;
     setBusy(false);
-    setMessage('解析を中止しました。');
+    setMessage('');
     stopPreview(true);
   };
 
@@ -620,14 +614,13 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
     const fitted=fitBeatOrigin(previewOrigin,previewBpm,grid.origin,duration);
     if(!fitted)return;
     pauseRef.current();stopPreview();setError('');setOriginText(String(fitted.time));seek(fitted.time);
-    setMessage(`${fitted.kind==='beat'?'近くの拍':'拍と拍の中点'}にフィットしました。${fitted.time.toFixed(3)}秒。`);
   };
 
   const saveDraft = () => {
     if(busy||!historyReady){setError('解析と履歴の読み込みが終わってから保存してください。');return false;}
     if(!result)return true;
     const bpm=Number(bpmText),origin=Number(originText);
-    if(!automaticApplyReady){setError('BPM・「1」の位置・解析結果を確認してください。安定した拍を解析できなかった場合は「手動」で設定できます。');return false;}
+    if(!automaticApplyReady){setError('BPM・1拍目の位置・解析結果を確認してください。安定した拍は「手動」で設定してください。');return false;}
     pauseRef.current();stopPreview(true);
     const saved=source==='video'&&file?apply(bpm,origin):applyBpmOnly(bpm);
     if(!saved){setError('設定を保存できませんでした。動画の読み込みと端末の保存領域を確認して、もう一度お試しください。');return false;}
@@ -649,11 +642,10 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
   return (
     <section className="rhythm-analysis" aria-label="BPMと拍の自動解析">
       <div className="rhythm-analysis__heading">
-        <h2>BPM・拍を音声から調べる</h2>
+        <h2>BPM・拍の自動解析</h2>
         <span className="rhythm-analysis__source-badge">{sourceLabel}</span>
       </div>
-      {!historyReady && <p className="rhythm-analysis__hint" role="status">前回の解析結果を確認中…</p>}
-      {historyMessage && <p className="rhythm-analysis__hint" role="status">{historyMessage}</p>}
+      {!historyReady && <p className="rhythm-analysis__hint" role="status">読み込み中…</p>}
       {source === 'audio' && audioFile && <p className="rhythm-analysis__hint">音声：{audioFile.name}</p>}
 
       <details className="rhythm-analysis__settings" open={!result}>
@@ -674,7 +666,6 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
                   resumePosition.current = 0; setPosition(0);
                   setSource('video');
                   setError('');
-                  setMessage('動画の音声を選択しました。');
                 }}
               >
                 動画の音声
@@ -694,7 +685,6 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
                   resumePosition.current = 0; setPosition(0);
                   setSource('audio');
                   setError('');
-                  setMessage('別音声を選択しました。動画と音声の時刻はずれる場合があります。');
                 }}
               >
                 選択した音声
@@ -717,19 +707,18 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
           </div>
 
           {remote && !file && (
-            <p className="rhythm-analysis__hint">
-              外部動画の音声は直接解析できません。手元の音声を選んでください。別音声からはBPMだけを設定できます。
+            <p className="rhythm-analysis__warning" role="alert">
+              外部動画は音声ファイルを選んでください（BPMのみ設定）。
             </p>
           )}
           {source === 'audio' && audioFile && (
             <p className="rhythm-analysis__hint">
-              別音声の時刻は、読み込んだ動画の時刻と一致しない場合があります。動画へ拍の位置を自動適用しません。
+              別音声の1拍目は動画に反映しません。
             </p>
           )}
           {!analysisInput && (
-            <p className="rhythm-analysis__hint">動画の音声、または解析する音声ファイルを選んでください。</p>
+            <p className="rhythm-analysis__hint">音声を選んでください。</p>
           )}
-          <p className="rhythm-analysis__hint">解析はこの端末内で行います。初回だけ解析用データをダウンロードします。</p>
 
           <div className="rhythm-analysis__actions">
             <button type="button" className="button primary" disabled={!analysisInput || busy || !historyReady} onClick={() => void startAnalysis()}>
@@ -749,6 +738,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
         </p>
       )}
       {error && <p className="rhythm-analysis__error" role="alert">{error}</p>}
+      {historyError && <p className="rhythm-analysis__history-error" role="alert">{historyError}</p>}
 
       {result && (
         <div className="rhythm-analysis__result" ref={resultRef}>
@@ -761,11 +751,11 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
             className="rhythm-analysis__waveform"
             role="slider"
             tabIndex={duration ? 0 : -1}
-            aria-label="赤線の最初の1を移動"
+            aria-label="赤線の1拍目を移動"
             aria-valuemin={0}
             aria-valuemax={duration}
             aria-valuenow={validDraft?previewOrigin:0}
-            aria-valuetext={`最初の1は${previewOrigin.toFixed(3)}秒`}
+            aria-valuetext={`1拍目は${previewOrigin.toFixed(3)}秒`}
             onPointerDown={event=>{
               if(event.button!==0||!validDraft)return;
               const rect=event.currentTarget.getBoundingClientRect();if(!rect.width)return;
@@ -799,7 +789,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
             <span>{secondsLabel(windowEnd)}</span>
           </div>
           <div className="rhythm-analysis__preview-row">
-            <button type="button" className="button mini" disabled={!validDraft} onClick={()=>seek(previewOrigin)}>1へ</button>
+            <button type="button" className="button mini" disabled={!validDraft} onClick={()=>seek(previewOrigin)}>1拍目へ</button>
             <button type="button" className="button mini" disabled={!validDraft||!grid||grid.variable} onClick={fitOrigin}>フィット</button>
             <button type="button" className="button mini primary" disabled={!audioUrl} onClick={() => void togglePreview()}>
               {playing ? '停止' : '拍音で再生'}
@@ -819,14 +809,14 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
             <output>{secondsLabel(position)} / {secondsLabel(duration)}</output>
           </label>
           {hasBeats && (
-            <p className="rhythm-analysis__click-note">白線＝解析した拍。赤い「1」をドラッグし、フィットで近くの拍・中点に合わせます。拍音はこの「1」から数え、1・5を高音にします。</p>
+            <p className="rhythm-analysis__click-note">赤線（1拍目）をドラッグ。フィットで近くの拍・中点に合わせます。</p>
           )}
 
           {resultGrid ? (
             <>
               {resultGrid.variable && (
                 <p className="rhythm-analysis__warning" role="alert">
-                  検出拍が一定の拍として安定しません。固定BPMの白線は途中でずれる可能性があるため、自動適用を止めています。必要なら手動の拍設定を使ってください。
+                  拍間隔が一定ではありません。自動適用を停止しています。手動で設定してください。
                 </p>
               )}
               {hasBeats && (
@@ -846,7 +836,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
                     />
                   </label>
                   <label className="numeric">
-                    <span>「1」の位置（秒）</span>
+                    <span>1拍目の位置（秒）</span>
                     <input
                       type="number"
                       inputMode="decimal"
@@ -856,7 +846,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
                       value={originText}
                       onChange={(event) => {setOriginText(event.target.value);setError('');}}
                       onBlur={commitOrigin}
-                      aria-label="1拍目の位置（秒）"
+                      aria-label="解析結果の1拍目の位置（秒）"
                     />
                   </label>
                 </div>
@@ -869,10 +859,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
                   <button type="button" className="button mini" disabled={!validDraft} onClick={() => adjustOrigin(60 / previewBpm)}>＋1拍</button>
                 </div>
               )}
-              <p className="rhythm-analysis__hint">{source==='video'&&file?'下の「保存して戻る」でBPMと赤い「1」の位置を反映します。':'下の「保存して戻る」でBPMだけを反映します。別音声の「1」は動画に移しません。'}</p>
-              {!automaticApplyReady && !resultGrid.variable && (
-                <p className="rhythm-analysis__hint">BPM・拍の位置・検出結果を確認すると適用できます。</p>
-              )}
+              <p className="rhythm-analysis__hint">{source==='video'&&file?'保存でBPMと1拍目の位置を反映。':'保存でBPMのみ反映。'}</p>
             </>
           ) : (
             <p className="rhythm-analysis__warning" role="alert">
@@ -883,7 +870,6 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, mediaKey, m
       )}
 
       <audio ref={audioRef} src={audioUrl ?? undefined} preload="metadata" className="rhythm-analysis__audio" aria-label="解析音声" />
-      {message && !busy && <p className="rhythm-analysis__status" role="status">{message}</p>}
     </section>
   );
 }

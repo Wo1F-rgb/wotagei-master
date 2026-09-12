@@ -12,7 +12,6 @@ export type FullscreenPlayerControlsProps={
  preparing?:boolean;
  time:number;
  duration:number;
- help?:string;
  tracking?:{label:string;disabled:boolean;open:()=>void;toggle?:()=>void;enabled?:boolean};
  onPlay:()=>void;
  onPause:()=>void;
@@ -20,7 +19,7 @@ export type FullscreenPlayerControlsProps={
  onExit:()=>void;
 };
 
-export function FullscreenPlayerControls({active,playing,preparing=false,time,duration,help,tracking,onPlay,onPause,onSeek,onExit}:FullscreenPlayerControlsProps){
+export function FullscreenPlayerControls({active,playing,preparing=false,time,duration,tracking,onPlay,onPause,onSeek,onExit}:FullscreenPlayerControlsProps){
  const [visible,setVisible]=useState(false),[scrubTime,setScrubTime]=useState<number|null>(null),controls=useRef<HTMLDivElement>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const scrubbing=useRef(false),scrubValue=useRef(0),scrubWasPlaying=useRef(false);
  const latestPlay=useRef(onPlay);latestPlay.current=onPlay;
@@ -135,7 +134,6 @@ export function FullscreenPlayerControls({active,playing,preparing=false,time,du
    </div>
    <label className="fullscreen-player-controls__seek-label"><span className="sr-only">動画の再生位置</span><input type="range" tabIndex={visible?0:-1} min={0} max={safeDuration||1} step={.01} value={displayTime} disabled={disabled} aria-label="動画の再生位置" aria-valuetext={`${formatMediaTime(displayTime)} / ${formatMediaTime(safeDuration)}`} onClick={stopInteraction} onPointerDown={startPointerScrub} onPointerUp={endPointerScrub} onPointerCancel={endPointerScrub} onKeyDown={startKeyboardScrub} onKeyUp={endKeyboardScrub} onBlur={event=>finishScrub(scrubValue.current)} onChange={changeScrub}/></label>
    {tracking&&<div className="fullscreen-player-controls__tracking-row"><button type="button" className="fullscreen-player-controls__tracking" aria-label="位置追従を設定" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.open}>{tracking.label} · 設定</button>{tracking.toggle&&<button type="button" className="fullscreen-player-controls__tracking" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.toggle}>{tracking.enabled?'追従を解除':'追従を再開'}</button>}</div>}
-   {help&&<p className="fullscreen-player-controls__help" role="note">{help}</p>}
   </div>
  </div>;
 }
