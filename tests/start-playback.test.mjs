@@ -32,6 +32,12 @@ test('warm resume corrects asymmetric decoder launch once, without another seek'
  assert.deepEqual([r.seeks,s.seeks],seeks);assert.deepEqual([r.starts,s.starts],[starts[0]+2,starts[1]+1]);
  assert.ok(Math.abs(map(r.currentTime)-s.currentTime)<.03);r.pause();s.pause();
 });
+test('cold preparation pins an explicit seek destination instead of a stale native getter',async()=>{
+ const r=new ResumeMedia(),s=new ResumeMedia();r.value=12;s.value=15;s.playbackRate=1.25;
+ await startComparison(r,s,t=>1+(t-3.9)*1.25,1.25,()=>true,undefined,undefined,3.9);
+ assert.ok(r.currentTime>=3.9&&r.currentTime<5,'the requested destination survives initial preparation');
+ assert.ok(Math.abs(1+(r.currentTime-3.9)*1.25-s.currentTime)<.03);r.pause();s.pause();
+});
 test('warm resume observes an audio-clock stall after play has already resolved',async()=>{
  const r=new ResumeMedia(),s=new ResumeMedia();s.playbackRate=1.25;const map=t=>t*1.25;
  await startComparison(r,s,map,1.25,()=>true);r.pause();s.pause();

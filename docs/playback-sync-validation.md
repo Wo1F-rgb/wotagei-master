@@ -143,3 +143,55 @@ Chromium that did not appear in local Windows runs. Removing clock observation
 entirely let the audio clock stall just after Play resolved. The corrected warm
 path starts both videos immediately but retains the one-time observation while
 they play. It still skips muted warmup and rewind, and never hides the frames.
+
+
+## 2026-09-12: paused clocks and outstanding seeks
+
+The next report showed different paused white-grid offsets at reference 3.9 s
+and 14.8 s, still with BPM 150.119 / 139.879 and origins 3.9 / 1.0. A missing
+browser-event path was reproduced: the reference slider stored its requested
+time, but the follower stored an immediate `currentTime` read. When that read
+still described the old frame, the follower's white grid stayed there after
+the actual native seek completed. Paused playback had neither a seeked/timeupdate
+handler nor a polling path to refresh it.
+
+Native seeked, pause and timeupdate events now refresh the actual clocks while
+paused. Pause samples after pausing the media. This is a read-only refresh: it
+does not seek, change BPM/origins, or force the grids to look synchronized.
+
+Explicit seek destinations are retained separately until completion and used
+only to coordinate commands. Closing a timing editor or starting playback while
+a seek is pending uses the requested destination, rather than the previous frame.
+The initial native preparation receives that destination explicitly. Already
+requested follower positions are not assigned a second time just because the
+native getter has not caught up. Source replacement invalidates pending targets;
+successful playback releases them so later Play uses the actual current position.
+
+A second reproduction delayed seek-completion notification by 180 ms while
+keeping real native video decoding. Seeking backward in full-screen playback
+then immediately resuming made startup observation use the pre-seek timestamp.
+The new frame could not advance past that timestamp within the timeout, despite
+both clips playing correctly. Startup observation now establishes its baseline
+after the pending native seeks finish. It does not repeatedly seek or cover the
+videos while observing.
+
+`tests/built-paused-clocks.mjs` preserves real HTMLVideoElement decoding and
+injects late clock publication / delayed seeked events. It fails on the previous
+build and checks paused arrow/page seeks, closing an outstanding timing edit,
+first-ever comparison preview, both audio masters at 0.5 / 1 / 1.25 speed, and
+forward/backward full-screen scrub-resume around 14.8 / 3.9 seconds. It also
+moves only one native video and verifies the real mismatch stays visible.
+The injected condition is a regression model, not an iPhone Safari measurement.
+The new test is required for Pages publication.
+
+Local validation: 237 unit tests and type checking passed. The complete native
+sync browser suite passed 47 runs / 24 rate combinations / 4 loop boundaries,
+with a maximum sampled clock gap of 40.2 ms. The previous beat-editor
+and 12-resume regression passed. The new delayed-clock suite passed with both
+synthetic fixtures and the user's two original videos, read locally only.
+
+A local Playwright WebKit 26.6 run on Windows could not decode either MP4 fixture
+(HTMLMediaElement error code 4, readyState 0, duration NaN), so this is NOT a
+successful WebKit or physical-iPhone validation. The test accepts
+PLAYWRIGHT_ENGINE=webkit for an environment with usable media support. The
+Chromium regressions remain mandatory and are not skipped on failure.

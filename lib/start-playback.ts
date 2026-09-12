@@ -56,8 +56,8 @@ function waitPosition(media:Media,target:number,isCurrent:()=>boolean):Promise<v
  });
 }
 /** Prepare the requested positions once. Do not retry/rewind to chase clock differences. */
-async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean,rateReady?:Promise<void>){
- const start=reference.currentTime,ownStart=targetSelf(start),muted=[reference.muted,self.muted];
+async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean,rateReady?:Promise<void>,start=reference.currentTime){
+ const ownStart=targetSelf(start),muted=[reference.muted,self.muted];
  let accepted=false;
  reference.pause();self.pause();reference.muted=true;self.muted=true;
  try{
@@ -82,9 +82,9 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
  }
 }
 /** Local files use a preparation barrier. An embedded player exposes no decoded-frame readiness. */
-export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean,rateReady?:Promise<void>,targetReference?: (t:number)=>number){
+export async function startComparison(reference:Media,self:Media|null,targetSelf:(t:number)=>number,selfRate:number,isCurrent:()=>boolean,rateReady?:Promise<void>,targetReference?: (t:number)=>number,referenceStart=reference.currentTime){
  if(!isCurrent())return false;
- const initialTarget=targetSelf(reference.currentTime);
+ const initialTarget=targetSelf(referenceStart);
  if(self&&initialTarget>=0&&initialTarget<self.duration&&preparable(reference)&&preparable(self)){
   if(canResumePair(reference,self,targetSelf)){
    try{
@@ -97,7 +97,7 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
     return true;
    }catch(error){if(error instanceof CanceledStart)return false;throw error;}
   }
-  return startPrepared(reference,self,targetSelf,isCurrent,rateReady);
+  return startPrepared(reference,self,targetSelf,isCurrent,rateReady,referenceStart);
  }
  try{
   const referenceStart=reference.play();
@@ -115,12 +115,13 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
  * catches it. This avoids introducing another decode delay through a final seek.
  * There is no background drift correction after this startup barrier. */
 async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean){
- const initial=[reference.currentTime,self.currentTime],began=Date.now();
+ let initial:number[]|null=null,observing=Date.now();const began=Date.now();
  await new Promise<void>((resolve,reject)=>{
   const check=()=>{
    if(!isCurrent()){reject(new CanceledStart());return;}
    const elapsed=Date.now()-began;
-   if(elapsed>=250&&[reference,self].every((m,i)=>!m.seeking&&m.readyState>=2&&((m.currentTime-initial[i])/m.playbackRate>=.08||m.paused))){resolve();return;}
+   if(!initial&&!reference.seeking&&!self.seeking&&reference.readyState>=2&&self.readyState>=2){initial=[reference.currentTime,self.currentTime];observing=Date.now();}
+   if(initial&&Date.now()-observing>=250&&[reference,self].every((m,i)=>!m.seeking&&m.readyState>=2&&((m.currentTime-initial![i])/m.playbackRate>=.08||m.paused))){resolve();return;}
    if(elapsed>=8000){reject(new Error('動画の再生時計が進みません。読み込みを待って再生し直してください。'));return;}
    setTimeout(check,12);
   };check();
