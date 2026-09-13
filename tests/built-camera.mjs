@@ -20,14 +20,14 @@ try{
   window.__cameras=[];window.__cameraCalls=[];window.__failRear=false;window.__deferCamera=false;
   Object.defineProperty(navigator,'canShare',{value:()=>false,configurable:true});
   Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async constraints=>{
-   const facing=typeof constraints.video.facingMode==='string'?constraints.video.facingMode:constraints.video.facingMode.exact;
+   const facing=constraints.video.deviceId?.exact?.replace('synthetic-','')||(typeof constraints.video.facingMode==='string'?constraints.video.facingMode:constraints.video.facingMode.exact||constraints.video.facingMode.ideal);
    window.__cameraCalls.push({facing,live:window.__cameras.filter(c=>c.track.readyState==='live').length});
    if(facing==='environment'&&window.__failRear)throw new DOMException('No rear lens','OverconstrainedError');
    if(window.__deferCamera){window.__deferCamera=false;await new Promise(resolve=>window.__resolveCamera=resolve);}
    const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;const ctx=canvas.getContext('2d');let n=0;
    const draw=()=>{ctx.fillStyle=facing==='user'?'#8040e0':'#40e060';ctx.fillRect(0,0,640,360);ctx.fillStyle='white';ctx.fillRect(n++%560,100,80,80);};draw();
    const stream=canvas.captureStream(30),track=stream.getVideoTracks()[0],stop=track.stop.bind(track),timer=setInterval(draw,33);
-   const settings=track.getSettings.bind(track);track.getSettings=()=>({...settings(),facingMode:facing});
+   const settings=track.getSettings.bind(track);track.getSettings=()=>({...settings(),deviceId:'synthetic-'+facing,facingMode:facing});
    track.stop=()=>{clearInterval(timer);stop();};window.__cameras.push({track,stream,canvas,facing});return stream;
   }});
  });

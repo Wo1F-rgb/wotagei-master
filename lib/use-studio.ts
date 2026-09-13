@@ -21,6 +21,7 @@ import {cameraConstraints,cameraFacingLabel,captureCameraFrame,type CameraFormat
 import {prepareRecordingClock} from './recording-clock';
 import {recordingFile} from './recording-save';
 import {useRecordingSave} from './use-recording-save';
+import {cameraDevices as listCameraDevices,readCameraLens,applyCameraZoom,cameraZoomTarget,defaultCameraLens,type CameraDevice} from './camera-lenses';
 import {requestRecordingSound,recordingSoundError,type RecordingSound} from './recording-sound';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
@@ -72,6 +73,9 @@ export function useStudio(){
  const [camera,setCamera]=useState(false), [cameraBusy,setCameraBusy]=useState(false), [recording,setRecording]=useState(false);
  const [cameraFormat,setCameraFormatState]=useState<CameraFormat>('landscape');
  const [cameraFacing,setCameraFacing]=useState<CameraFacing>('user');
+ const [cameraDevices,setCameraDevices]=useState<CameraDevice[]>([]),[cameraLens,setCameraLens]=useState(defaultCameraLens);
+ const cameraLensRef=useRef(defaultCameraLens),cameraChanging=useRef(false);
+ function commitCameraLens(value:typeof defaultCameraLens){cameraLensRef.current=value;setCameraLens(value);}
  function setCameraFormat(value:CameraFormat){if(!recorder.current&&!recordingJob.current&&(value==='landscape'||value==='portrait'))setCameraFormatState(value);}
  const [notice,setNotice]=useState(''), [click,setClick]=useState(false);
  const [alignments,setAlignments]=useState<[Alignment,Alignment]>([{...defaultAlignment},{...defaultAlignment}]);
@@ -198,7 +202,7 @@ export function useStudio(){
  }
  function seekSolo(index:number,value:number){pause();const el=index===0?referenceMedia():self.current;if(!el||!sources[index]||(!Number.isFinite(el.duration)||el.duration<=0)||(index===1&&camera))return;seekPositions.current.seek(el,clamp(value,0,el.duration));if(index===0)setTime(el.currentTime);else setSelfTime(el.currentTime);}
  function resetTaps(index:number){taps.current[index]=[];setTapGrids(v=>v.map((n,i)=>i===index?null:n));setTapCounts(v=>v.map((n,i)=>i===index?0:n));}
- function stopCamera(){cancelRecordingStart();if(stream.current)pause();cameraRequest.current++;liveRateRequest.current++;liveRatePending.current=false;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(self.current){self.current.pause();seekPositions.current.clear(self.current);self.current.srcObject=null;}snapshot.current={...snapshot.current,camera:false};setCamera(false);setCameraBusy(false);}
+ function stopCamera(){cancelRecordingStart();if(stream.current)pause();cameraRequest.current++;cameraChanging.current=false;liveRateRequest.current++;liveRatePending.current=false;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(self.current){self.current.pause();seekPositions.current.clear(self.current);self.current.srcObject=null;}snapshot.current={...snapshot.current,camera:false};setCamera(false);setCameraBusy(false);setCameraDevices([]);commitCameraLens(defaultCameraLens);}
  function seek(value:number,loopJump=false){
   cancelCues();if(!loopJump)pause();
   const r=referenceMedia(),s=self.current,c=snapshot.current;
@@ -316,33 +320,63 @@ export function useStudio(){
   if(!sources.some(Boolean)){setNotice('動画を読み込んでから保存してください。');return false;}
   try{sources.forEach((source,i)=>{if(source)localStorage.setItem('wotagei:video:'+source.key,JSON.stringify({bpm:bpm[i],kind:bpmKinds[i],origin:origins[i],mirror:mirrors[i],tripod:tripods[i]}));});if(!quiet)setNotice('');return true;}catch{setNotice('設定を保存できません。ストレージを確認してください');return false;}
  }
- async function startCamera(facing:CameraFacing=cameraFacing){
-  if(cameraBusy||recorder.current||recordingJob.current)return false;
-  const previous=stream.current?cameraFacing:null;
+ async function startCamera(facing:CameraFacing=cameraFacing,selection?:{deviceId:string;zoom?:number}){
+  if(cameraChanging.current||recorder.current||recordingJob.current)return false;
+  const actualFacing=stream.current?.getVideoTracks()[0]?.getSettings().facingMode;
+  const previous=stream.current?{facing:actualFacing==='user'||actualFacing==='environment'?actualFacing:cameraFacing,lens:cameraLensRef.current}:null;
   resetSound();
   optimization.current?.abort();
   if(!navigator.mediaDevices?.getUserMedia){setNotice('カメラはHTTPSで開いたSafariなどの対応ブラウザで利用できます。');return;}
-  pause();stopCamera();const id=++cameraRequest.current;setCameraBusy(true);
+  pause();stopCamera();const id=++cameraRequest.current;cameraChanging.current=true;setCameraBusy(true);
   try{
    let input:MediaStream,restored=false;
-   try{input=await navigator.mediaDevices.getUserMedia(cameraConstraints(cameraFormat,facing,previous!==null));}
+   const open=async(side:CameraFacing,deviceId?:string)=>{
+    const c=cameraConstraints(cameraFormat,side,previous!==null);
+    if(deviceId){(c.video as MediaTrackConstraints).deviceId={exact:deviceId};(c.video as MediaTrackConstraints).facingMode={ideal:side};}
+    const media=await navigator.mediaDevices.getUserMedia(c),videoTrack=media.getVideoTracks()[0],actualId=videoTrack?.getSettings().deviceId;
+    if(!videoTrack){media.getTracks().forEach(t=>t.stop());throw new DOMException('No video track','NotFoundError');}
+    if(deviceId&&actualId!==deviceId){media.getTracks().forEach(t=>t.stop());throw new DOMException('Requested lens was not selected','NotFoundError');}
+    return media;
+   };
+   try{input=await open(facing,selection?.deviceId);}
    catch(error){
     if(!lifecycle.current||id!==cameraRequest.current)return false;
-    if(!previous||previous===facing||(error instanceof DOMException&&error.name==='NotAllowedError'))throw error;
+    if(!previous||(!selection&&(previous.facing===facing||(error instanceof DOMException&&error.name==='NotAllowedError'))))throw error;
     // iOS needs the old track released first. Recover it if the requested lens is unavailable.
-    input=await navigator.mediaDevices.getUserMedia(cameraConstraints(cameraFormat,previous));restored=true;
+    input=await open(previous.facing,previous.lens.deviceId);restored=true;
    }
    if(!lifecycle.current||id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return false;}
-   const actual=input.getVideoTracks()[0]?.getSettings().facingMode;
-   const chosen:CameraFacing=actual==='user'||actual==='environment'?actual:restored?previous!:facing;
-   stream.current=input;snapshot.current={...snapshot.current,camera:true};setCamera(true);setCameraFacing(chosen);setMirrors(v=>[v[0],false]);setTripods(v=>[v[0],true]);
+   const track=input.getVideoTracks()[0];if(!track)throw new Error('カメラの映像がありません。');
+   const actual=track.getSettings().facingMode;
+   const chosen:CameraFacing=actual==='user'||actual==='environment'?actual:restored?previous!.facing:facing;
+   // Keep ownership during asynchronous device discovery, so cancel/unmount releases it.
+   stream.current=input;
+   let devices:CameraDevice[]=[];try{devices=listCameraDevices(await navigator.mediaDevices.enumerateDevices(),track,chosen);}catch{}
+   if(!lifecycle.current||id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return false;}
+   let lens=readCameraLens(track,devices),zoomError='';
+   const target=restored?previous!.lens.zoom:selection?.zoom;
+   if(target!==undefined)try{lens=await applyCameraZoom(track,lens,target);}catch(e){lens=readCameraLens(track,devices);zoomError=e instanceof Error?e.message:'倍率を変更できませんでした。';}
+   if(!lifecycle.current||id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return false;}
+   setCameraDevices(devices);commitCameraLens(lens);
+   stream.current=input;snapshot.current={...snapshot.current,camera:true};setCamera(true);setCameraFacing(chosen);if(!previous||previous.facing!==chosen){setMirrors(v=>[v[0],false]);setTripods(v=>[v[0],true]);}
    if(!self.current)throw new Error('カメラの表示先がありません。');
    self.current.muted=true;self.current.playbackRate=1;seekPositions.current.clear(self.current);self.current.srcObject=input;await self.current.play();
-   if(id!==cameraRequest.current)return false;
-   setCameraBusy(false);
-   setNotice(restored?`${cameraFacingLabel[facing]}に切替不可・${cameraFacingLabel[chosen]}に戻しました`:'');return true;
+   if(id!==cameraRequest.current){input.getTracks().forEach(t=>t.stop());return false;}
+   cameraChanging.current=false;setCameraBusy(false);
+   setNotice(restored?`${selection?'レンズ':cameraFacingLabel[facing]}に切替不可・${cameraFacingLabel[chosen]}に戻しました`:zoomError);return true;
   }catch(e){if(id!==cameraRequest.current)return false;stopCamera();setNotice(e instanceof DOMException&&e.name==='NotAllowedError'?'カメラが許可されていません。Safariのカメラ設定から許可してください。':e instanceof DOMException&&['OverconstrainedError','NotFoundError'].includes(e.name)?`${cameraFacingLabel[facing]}が見つかりません。別のカメラを選んでください。`:'カメラを起動できません。ほかのアプリで使用中でないか確認してください。');return false;}
  }
+ async function setCameraZoom(value:number){
+  if(!stream.current||cameraChanging.current||recorder.current||recordingJob.current)return;
+  const target=cameraZoomTarget(value,cameraDevices,cameraLensRef.current,cameraFacing);
+  if(!target){setNotice('超広角レンズが見つかりません。動画設定のレンズ一覧も確認してください。');return;}
+  if(target.deviceId!==cameraLensRef.current.deviceId){await startCamera(cameraFacing,target);return;}
+  const id=cameraRequest.current,track=stream.current.getVideoTracks()[0];cameraChanging.current=true;setCameraBusy(true);
+  try{const lens=await applyCameraZoom(track,cameraLensRef.current,value);if(id===cameraRequest.current&&lifecycle.current){commitCameraLens(lens);setNotice('');}}
+  catch(e){if(id===cameraRequest.current&&lifecycle.current){const actual=readCameraLens(track,cameraDevices),digital=cameraLensRef.current.digital;commitCameraLens({...actual,digital,zoom:actual.zoom*digital});setNotice(e instanceof Error?e.message:'倍率を変更できませんでした。');}}
+  finally{if(id===cameraRequest.current){cameraChanging.current=false;setCameraBusy(false);}}
+ }
+ async function selectCameraDevice(deviceId:string){const device=cameraDevices.find(d=>d.id===deviceId);if(device)await startCamera(device.facing||cameraFacing,{deviceId});}
  async function beginTap(index:number){resetTaps(index);await playSolo(index);if(solo.current===index){tapSession.current=index;setTapRecording(index);setNotice('');}}
  function finishTap(){pause();}
  function interruptTap(index:number){if(tapSession.current!==index)return;tapSession.current=null;setTapRecording(null);setNotice('再生が中断したため、ここまでの拍を採用');}
@@ -367,7 +401,7 @@ export function useStudio(){
  async function toggleRecording(requested:RecordingSound='none'):Promise<boolean>{
   if(recorder.current?.state==='recording'){recorder.current.stop();return false;}
   if(recordingJob.current){cancelRecordingStart();return false;}
-  if(recorder.current)return false;
+  if(recorder.current||cameraChanging.current)return false;
   if(!stream.current||typeof MediaRecorder==='undefined'){setNotice('このブラウザはカメラ録画に対応していません。');return false;}
   const cameraStream=stream.current,job=new AbortController();recordingJob.current=job;setRecordingBusy(true);setRecordingError('');
   const kind:RecordingSound=youtubeActive.current?(requested==='music'?'none':requested):sources[0]?'music':'none';
@@ -378,7 +412,7 @@ export function useStudio(){
    const music=kind==='music'?reference.current:null;
    if(music)audio.current??=new AudioContext();
    if(!self.current||self.current.srcObject!==cameraStream)throw new Error('カメラを起動してから録画してください。');
-   const frame=captureCameraFrame(self.current,cameraFormat);
+   const frame=captureCameraFrame(self.current,cameraFormat,()=>cameraLensRef.current.digital);
    release=()=>{frame.release();external?.release();};
    const input=recordingAudio.current.capture(frame.stream,music,audio.current||undefined,external?.stream);
    let released=false;
@@ -509,5 +543,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{playRequest.current++;running.current=false;starting.current=false;cancelStallCheck();linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;recordingJob.current?.abort();recordingJob.current=null;cameraRequest.current++;liveRateRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();if(recorder.current?.state==='recording')recorder.current.stop();recordingRelease.current?.();recordingAudio.current.dispose();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {recordingSave,mediaClockChanged,cameraFacing,cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {cameraDevices,cameraLens,setCameraZoom,selectCameraDevice,recordingSave,mediaClockChanged,cameraFacing,cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }

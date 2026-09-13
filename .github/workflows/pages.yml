@@ -30,6 +30,7 @@ jobs:
       - run: node tests/built-paused-clocks.mjs
       - run: node tests/built-sync.mjs
       - run: node tests/built-camera.mjs
+      - run: node tests/built-camera-zoom.mjs
       - run: node tests/built-recording-save.mjs
       - run: node tests/built-compact-ui.mjs
       - run: node tests/built-viewer.mjs

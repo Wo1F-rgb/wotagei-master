@@ -12,8 +12,18 @@ export function cameraConstraints(format:CameraFormat,facing:CameraFacing='user'
  return {video:{facingMode:exact||facing==='environment'?{exact:facing}:facing,width:{ideal:width},height:{ideal:height},aspectRatio:{ideal:width/height},frameRate:{ideal:30,max:30}},audio:false};
 }
 
+export function cameraCrop(width:number,height:number,zoom:number){
+ const factor=Number.isFinite(zoom)?Math.max(1,Math.min(8,zoom)):1;
+ return {x:width*(1-1/factor)/2,y:height*(1-1/factor)/2,width:width/factor,height:height/factor};
+}
+// Clip around the contained source image before scaling, preserving its letterboxing.
+export function cameraZoomClip(width:number,height:number,view:{width:number;height:number},zoom:number){
+ if(zoom<=1||width<=0||height<=0||view.width<=0||view.height<=0)return undefined;
+ const rect=containRect(width,height,view.width,view.height);
+ return `inset(${(view.height-rect.height/zoom)/2}px ${(view.width-rect.width/zoom)/2}px)`;
+}
 /** Normalize only while recording. Preview stays on the original low-latency camera stream. */
-export function captureCameraFrame(video:HTMLVideoElement,format:CameraFormat){
+export function captureCameraFrame(video:HTMLVideoElement,format:CameraFormat,getZoom:()=>number=()=>1){
  if(!video.videoWidth||!video.videoHeight||video.readyState<2)throw new Error('カメラの映像が表示されてから録画してください。');
  const canvas=document.createElement('canvas'),size=cameraFrame(format);
  canvas.width=size.width;canvas.height=size.height;
@@ -24,10 +34,12 @@ export function captureCameraFrame(video:HTMLVideoElement,format:CameraFormat){
  const draw=()=>{
   if(video.readyState<2||!video.videoWidth||!video.videoHeight)return;
   // Read current dimensions on every frame: iOS may swap them after a device rotation.
-  // Contain, never rotate/stretch/crop the dancer. The recording dimensions stay fixed.
+  // Contain without rotation/stretch. Only the explicitly chosen digital zoom crops.
   const rect=containRect(video.videoWidth,video.videoHeight,canvas.width,canvas.height);
   ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(video,rect.x,rect.y,rect.width,rect.height);
+  const zoom=getZoom();
+  if(zoom>1){const crop=cameraCrop(video.videoWidth,video.videoHeight,zoom);ctx.drawImage(video,crop.x,crop.y,crop.width,crop.height,rect.x,rect.y,rect.width,rect.height);}
+  else ctx.drawImage(video,rect.x,rect.y,rect.width,rect.height);
   captureTrack?.requestFrame?.();
  };
  const release=()=>{

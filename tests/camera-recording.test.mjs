@@ -65,3 +65,13 @@ test('rear requests cannot silently fall back to a front lens; front switch is e
  assert.deepEqual(cameraConstraints('portrait','user',true).video.facingMode,{exact:'user'});
  assert.deepEqual(cameraConstraints('portrait','environment').video.aspectRatio,{ideal:9/16});
 });
+
+test('selected digital zoom is encoded as a centered source crop and keeps the fixed recording frame on rotation',t=>{
+ const f=fixture(t);f.video.videoWidth=1280;f.video.videoHeight=720;let zoom=2;
+ const recording=captureCameraFrame(f.video,'landscape',()=>zoom);
+ assert.deepEqual(f.drawing.at(-1).slice(1),[320,180,640,360,0,0,1280,720]);
+ f.video.videoWidth=720;f.video.videoHeight=1280;f.tick();
+ assert.deepEqual(f.drawing.at(-1).slice(1),[180,320,360,640,437.5,0,405,720]);
+ zoom=1;f.tick();assert.deepEqual(f.drawing.at(-1).slice(1),[437.5,0,405,720]);
+ recording.release();assert.equal(f.track.readyState,'ended');
+});
