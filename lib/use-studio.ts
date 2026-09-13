@@ -19,6 +19,8 @@ import {restoreVideoDisplay} from './video-display';
 import {PracticeRecordingAudio,recordingMime} from './practice-recording';
 import {cameraConstraints,cameraFacingLabel,captureCameraFrame,type CameraFormat,type CameraFacing} from './camera-recording';
 import {prepareRecordingClock} from './recording-clock';
+import {recordingFile} from './recording-save';
+import {useRecordingSave} from './use-recording-save';
 import {requestRecordingSound,recordingSoundError,type RecordingSound} from './recording-sound';
 export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
@@ -76,7 +78,7 @@ export function useStudio(){
  const [alignmentMaster,setAlignmentMaster]=useState<0|1>(0),alignmentTarget=1-alignmentMaster,alignment=alignments[alignmentTarget];
  function setAlignment(action:SetStateAction<Alignment>){setAlignments(v=>v.map((a,i)=>i===alignmentTarget?(typeof action==='function'?action(a):action):a) as [Alignment,Alignment]);}
  function resetAlignments(){setAlignments([{...defaultAlignment},{...defaultAlignment}]);}
- const [recordingDownload,setRecordingDownload]=useState<Source|null>(null),recordingUrl=useRef<string|null>(null);
+ const recordingSave=useRecordingSave(),recordingDownload=recordingSave.recording,recordingUrl=useRef<string|null>(null);
  const stream=useRef<MediaStream|null>(null), cameraRequest=useRef(0), running=useRef(false), playRequest=useRef(0), urls=useRef(new Set<string>());
  const recorder=useRef<MediaRecorder|null>(null),recordingAudio=useRef(new PracticeRecordingAudio()),recordingRelease=useRef<(()=>void)|null>(null);
  const [recordingSound,setRecordingSound]=useState<RecordingSound>('none'),[recordingBusy,setRecordingBusy]=useState(false),[recordingError,setRecordingError]=useState('');
@@ -396,11 +398,11 @@ export function useStudio(){
     release();if(recorder.current===r){recorder.current=null;recordingRelease.current=null;}
     if(!lifecycle.current)return;
     setRecording(false);if(failed)return;
-    const blob=new Blob(parts,{type:r.mimeType});if(!blob.size){setNotice('録画を保存できませんでした。');return;}
-    const url=URL.createObjectURL(blob);urls.current.add(url);
+    const file=recordingFile(parts,r.mimeType);if(!file.size){setNotice('録画を保存できませんでした。');return;}
+    const url=URL.createObjectURL(file);urls.current.add(url);
     const previous=recordingUrl.current;recordingUrl.current=url;if(previous&&urls.current.delete(previous))URL.revokeObjectURL(previous);
-    setRecordingDownload({url,name:`wotagei-${new Date().toISOString().replace(/[:.]/g,'-')}.${r.mimeType.includes('mp4')?'mp4':'webm'}`,key:'recording'});
-    setNotice(inputEnded?'入力が終了したため録画を停止・録画を保存してください':'録画を保存してください');
+    recordingSave.offer({url,name:file.name,key:'recording',file});
+    setNotice(inputEnded?'入力が終了したため録画を停止しました':'');
    };
    const fail=()=>{if(recorder.current!==r)return;failed=true;if(r.state!=='inactive')r.stop();else{release();recorder.current=null;recordingRelease.current=null;}if(lifecycle.current){setRecording(false);setNotice('録画中にエラーが発生しました。音声・録画に対応したブラウザで再度試してください。');}};
    r.onerror=fail;
@@ -507,5 +509,5 @@ export function useStudio(){
   document.addEventListener('visibilitychange',visibility);
   return()=>{playRequest.current++;running.current=false;starting.current=false;cancelStallCheck();linkRequest.current?.abort();linkRequest.current=null;cancelCues();optimization.current?.abort();lifecycle.current=false;recordingJob.current?.abort();recordingJob.current=null;cameraRequest.current++;liveRateRequest.current++;document.removeEventListener('visibilitychange',visibility);youtube.current?.cancel();if(recorder.current?.state==='recording')recorder.current.stop();recordingRelease.current?.();recordingAudio.current.dispose();stream.current?.getTracks().forEach(t=>t.stop());urls.current.forEach(u=>URL.revokeObjectURL(u));void audio.current?.close();};
  },[]);
- return {mediaClockChanged,cameraFacing,cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
+ return {recordingSave,mediaClockChanged,cameraFacing,cameraFormat,setCameraFormat,recordingSound,recordingBusy,recordingError,cancelRecordingStart,clearRecordingError:()=>setRecordingError(''),tripods,setTripod,alignments,setAlignments,alignmentMaster,setAlignmentMaster,alignmentTarget,resetAlignments,linkLoading,cancelLinkLoad,loadTwitter,nudgeStep,setNudgeStep,finishTimingEdit,saveTiming:()=>persistSettings(true),nudgeTiming,applyFirstBeats,previewFirstBeats,preparing,soundSource,changeSound,beatPreview,previewBeats:(index:number)=>playSolo(index,true),interruptTap,tapRecording,tapGrids,beginTap,finishTap,youtubeReady,youtubeRates,loadYoutube,attachYoutube,youtubeMetadata,youtubeState,youtubeRate,youtubeError,drift,quality,optimizing,optimizeProgress,optimized,makeLightVideo,cancelOptimization,useOriginalVideo,adjustOrigin,reference,self,sources,files,durations,bpm,bpmKinds,applyBpm,applyAnalyzedGrid,origins,setOrigins,mirrors,setMirrors,rate,setRate,time,selfTime,playing,buffering,setBuffering,loop,setLoop,camera,cameraBusy,recording,notice,setNotice,alignment,setAlignment,click,setClick:changeClick,recordingDownload,pause,seek,play,loadFile,removeVideo,saveSettings,startCamera,stopCamera,tap,markOrigin,setSelfPosition,loaded,toggleRecording,mediaEnded,mediaWaiting,mediaPlaying,mediaError,soloPlaying,playSolo,seekSolo,tapCounts,resetTaps};
 }

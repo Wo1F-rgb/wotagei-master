@@ -407,6 +407,10 @@
 .practice-dialog .speed-presets{gap:5px}
 .practice-dialog .numeric>span{font-size:13px}
 .practice-dialog .sound-choice{gap:5px}
+.recording-save-dialog .recording-save-preview{display:block;width:100%;height:auto;max-height:35dvh;object-fit:contain;border-radius:8px;background:#000}
+.recording-save-dialog .recording-save-fallback summary{cursor:pointer;color:#a6adba;font-size:13px;padding:5px 0}
+.recording-save-dialog .recording-save-fallback .button{margin-top:6px}
+@media(orientation:landscape) and (max-height:500px){.recording-save-dialog{max-width:650px!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}.recording-save-dialog [data-slot=dialog-title],.recording-save-dialog [data-slot=dialog-description]{grid-column:1/-1}.recording-save-dialog .recording-save-preview{grid-column:1;grid-row:3/span 4;max-height:50dvh}.recording-save-dialog>.button,.recording-save-dialog>.recording-save-fallback,.recording-save-dialog>.warning{grid-column:2}}
 .config-content>p,.alignment-editor-body>p{margin:0}
 .notice{padding:6px 9px;font-size:13px;line-height:1.4}
 .notice .icon-button{min-width:32px;height:32px}

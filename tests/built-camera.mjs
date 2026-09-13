@@ -18,6 +18,7 @@ try{
  const page=await browser.newPage({viewport:{width:390,height:700}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{
   window.__cameras=[];window.__cameraCalls=[];window.__failRear=false;window.__deferCamera=false;
+  Object.defineProperty(navigator,'canShare',{value:()=>false,configurable:true});
   Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async constraints=>{
    const facing=typeof constraints.video.facingMode==='string'?constraints.video.facingMode:constraints.video.facingMode.exact;
    window.__cameraCalls.push({facing,live:window.__cameras.filter(c=>c.track.readyState==='live').length});
@@ -59,8 +60,9 @@ try{
  assert.equal(await page.evaluate(()=>document.querySelector('.deck-1 video').srcObject.getVideoTracks()[0].id),cameraTrack);
  assert.equal(await page.evaluate(()=>window.__fullscreenCamera.getVideoTracks()[0].readyState),'live');
  await button('再生コントロールを表示').click({position:{x:100,y:100}});await button('全画面を終了').click();await page.locator('.studio-immersive').waitFor({state:'hidden'});await page.setViewportSize({width:390,height:700});
- await button('録画停止').click();await page.getByRole('link',{name:'録画を保存',exact:true}).waitFor();await dismiss();
- const recorded=await page.getByRole('link',{name:'録画を保存',exact:true}).getAttribute('href');
+ await button('録画停止').click();await page.getByRole('dialog',{name:'録画を保存',exact:true}).waitFor();
+ const recorded=await page.getByRole('link',{name:'ファイルに保存',exact:true}).getAttribute('href');
+ await button('練習に戻る').click();await dismiss();
  const dimensions=await page.evaluate(async url=>{const blob=await fetch(url).then(r=>r.blob());const v=document.createElement('video');v.muted=true;v.src=url;await new Promise((resolve,reject)=>{v.onloadeddata=resolve;v.onerror=reject;});const frame=new Promise(resolve=>v.requestVideoFrameCallback(resolve));await v.play();await frame;v.pause();const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext('2d');ctx.drawImage(v,0,0);const pixel=Array.from(ctx.getImageData(640,600,1,1).data);return {width:v.videoWidth,height:v.videoHeight,bytes:blob.size,pixel};},recorded);
  console.log('Recording frame check',dimensions);assert.equal(dimensions.width,1280);assert.equal(dimensions.height,720);assert.ok(dimensions.bytes>1000);assert.ok(dimensions.pixel[1]>dimensions.pixel[0]*1.5&&dimensions.pixel[1]>dimensions.pixel[2]*1.5,'saved frames are from the green rear camera, not black or the front camera');
  await page.getByRole('tab',{name:'重ねる',exact:true}).click();await live('environment');
