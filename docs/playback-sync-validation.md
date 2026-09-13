@@ -195,3 +195,37 @@ A local Playwright WebKit 26.6 run on Windows could not decode either MP4 fixtur
 successful WebKit or physical-iPhone validation. The test accepts
 PLAYWRIGHT_ENGINE=webkit for an environment with usable media support. The
 Chromium regressions remain mandatory and are not skipped on failure.
+
+## 2026-09-14: latency introduced by the correction resume
+
+The startup correction paused the leading player until the other clock caught
+up, called Play again, and accepted success immediately when its Promise
+resolved. If both players had asynchronous activation delays, that last Play
+introduced a new phase error. Tests with 140 / 380 ms launch delays reproduce
+the problem in both directions.
+
+Native pair startup now records each Play acknowledgement delay, caps it by
+the source clock's actual lost time, and resumes the held player that much
+earlier. A second clock observation checks the
+result after both clocks advance. It never performs another correction loop,
+seek, or playback-rate change. If the startup remains over 75 ms apart, the
+application stops with a retry message instead of claiming synchronization.
+This threshold is a guard, not an iPhone accuracy guarantee.
+
+The estimate intentionally excludes a clock freeze occurring after Play has
+resolved: a one-off seek/audio warmup may not repeat on the next resume. The
+existing 300 / 650 ms post-Promise freeze regression remains required, along
+with the new two-sided delayed-Play cases and an unpredictable-resume case.
+
+The camera preview and recording pipeline are unchanged. No automatic
+steady-playback seeking or opaque preparation cover was added. Reports of
+freezes on Safari playback-rate changes also argue against continuous rate
+adjustments ([WebKit issue 163433](https://bugs.webkit.org/show_bug.cgi?id=163433)).
+The reproduced fault uses real Chromium media plus injected start delays;
+physical iPhone Safari behavior and camera sensor latency remain unmeasured.
+
+`tests/built-late-start.mjs` failed against the previous public build with a
+147.3 ms native clock gap. The corrected build passed both audio masters at
+0.5 / 1 / 1.25 speed, plus cancellation and restart (7 runs; maximum 37.5 ms).
+The test also checks decoded frame progress, unchanged nominal rates, zero
+extra startup seeks, and no preparation cover. It gates Pages deployment.

@@ -56,6 +56,44 @@ test('canceling a warm start leaves replacement media untouched',async()=>{
  assert.equal(await task,false);r.pause();s.pause();r.value=9;s.value=10;release();await delay(30);
  assert.deepEqual([r.seeks,s.seeks],seeks);assert.equal(r.currentTime,9);assert.equal(s.currentTime,10);
 });
+test('the correction resume accounts for latency on both players, without rate changes or another seek',async()=>{
+ for(const [rDelay,sDelay] of [[140,380],[380,140]]){
+  const r=new ResumeMedia(),s=new ResumeMedia();s.playbackRate=150.119/139.879;
+  const map=t=>1+(t-3.9)*s.playbackRate;r.value=3.9;s.value=1;
+  await startComparison(r,s,map,s.playbackRate,()=>true);r.pause();s.pause();
+  r.playDelay=rDelay;s.playDelay=sDelay;
+  const seeks=[r.seeks,s.seeks],starts=[r.starts,s.starts];
+  try{
+   await startComparison(r,s,map,s.playbackRate,()=>true);await delay(180);
+   assert.ok(Math.abs(map(r.currentTime)-s.currentTime)/s.playbackRate<.04,'restarting the held player must not leave its activation delay behind');
+   assert.deepEqual([r.seeks,s.seeks],seeks);assert.equal(r.starts+s.starts,starts[0]+starts[1]+3);
+   assert.equal(r.playbackRate,1);assert.equal(s.playbackRate,150.119/139.879);
+  }finally{r.pause();s.pause();}
+ }
+});
+test('a changing resume latency cannot silently be accepted as a synchronized start',async()=>{
+ const r=new ResumeMedia(),s=new ResumeMedia();await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();
+ s.playDelay=280;const original=r.play.bind(r);let calls=0;
+ r.play=async()=>{if(++calls===2)r.playDelay=300;await original();};
+ try{await assert.rejects(startComparison(r,s,t=>t,1,()=>true),/再生開始がずれ/);}
+ finally{r.pause();s.pause();}
+});
+test('the final held source may freeze after its play Promise already resolved',async()=>{
+ const r=new ResumeMedia(),s=new ResumeMedia();await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();
+ s.play=async()=>{s.starts++;s.since=performance.now()+110;s.paused=false;};
+ const original=r.play.bind(r);let calls=0;const seeks=[r.seeks,s.seeks];
+ r.play=async()=>{await original();if(++calls===2)r.since+=500;};
+ try{
+  await assert.rejects(startComparison(r,s,t=>t,1,()=>true),/再生開始がずれ/);
+  assert.deepEqual([r.seeks,s.seeks],seeks);assert.equal(calls,2,'do not keep retrying the unstable decoder');
+ }finally{r.pause();s.pause();}
+});
+test('late delivery of a play Promise is not mistaken for a stopped source clock',async()=>{
+ const r=new ResumeMedia(),s=new ResumeMedia();await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();
+ const original=r.play.bind(r);r.play=async()=>{await original();await delay(180);};s.playDelay=380;
+ try{await startComparison(r,s,t=>t,1,()=>true);assert.ok(Math.abs(r.currentTime-s.currentTime)<.04);}
+ finally{r.pause();s.pause();}
+});
 test('unequal decoder startup delays are corrected once after both play promises resolve',async()=>{
  let value=0,seeks=0;const reference={currentTime:0,duration:20,async play(){await Promise.resolve();this.currentTime=.4;}};
  const self={duration:20,async play(){value=.05;},get currentTime(){return value;},set currentTime(t){value=t;seeks++;}};

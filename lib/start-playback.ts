@@ -2,6 +2,12 @@ type Media={currentTime:number;duration:number;playbackRate?:number;play:()=>Pro
 type ClockMedia=Media&{pause:()=>void;paused:boolean;readyState:number;seeking:boolean;playbackRate:number};
 type PreparedMedia=ClockMedia&{muted:boolean;addEventListener:unknown;currentSrc?:string;src?:string};
 type PositionMedia=Media&{readyState?:number;seeking?:boolean};
+type ClockLaunch={delay:number;valid:boolean;at:number;position:number;rate:number};
+function launchClock(media:Media){
+ const at=performance.now(),clock:ClockLaunch={at,position:media.currentTime,rate:media.playbackRate||1,delay:0,valid:clockMedia(media)&&media.paused&&!media.seeking&&media.readyState>=2};
+ const promise=media.play().then(()=>{clock.delay=Math.max(0,Math.min(.75,(performance.now()-at)/1000));});
+ return {clock,promise};
+}
 const preparable=(media:Media):media is PreparedMedia=>typeof (media as PreparedMedia).pause==='function'&&typeof (media as PreparedMedia).addEventListener==='function';
 const clockMedia=(media:Media):media is ClockMedia=>typeof (media as ClockMedia).pause==='function'&&typeof (media as ClockMedia).paused==='boolean'&&typeof (media as ClockMedia).readyState==='number'&&typeof (media as ClockMedia).seeking==='boolean'&&typeof media.playbackRate==='number'&&Number.isFinite(media.playbackRate)&&media.playbackRate>0;
 // Decoder permission/readiness belongs to the media source, not each Play click.
@@ -69,9 +75,10 @@ async function startPrepared(reference:PreparedMedia,self:PreparedMedia,targetSe
   await Promise.all([waitReady(reference,start,isCurrent),waitReady(self,ownStart,isCurrent)]);
   if(!isCurrent())throw new CanceledStart();
   reference.muted=muted[0];self.muted=muted[1];
-  await waitCurrent(Promise.all([reference.play(),self.play()]),isCurrent);
+  const launches=[launchClock(reference),launchClock(self)];
+  await waitCurrent(Promise.all(launches.map(v=>v.promise)),isCurrent);
   if(!isCurrent())throw new CanceledStart();
-  await settleStartupClocks(reference,self,targetSelf,isCurrent);
+  await settleStartupClocks(reference,self,targetSelf,isCurrent,launches.map(v=>v.clock));
   rememberPair(reference,self);accepted=true;return true;
  }catch(error){if(error instanceof CanceledStart)return false;throw error;}
  finally{
@@ -91,9 +98,10 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
     // Play both in the gesture. Pending user seeks may finish naturally, without
     // another muted warmup, rewind or seek. Keep observing startup clocks
     // while frames play: an audio clock can stall after play() resolves.
-    await waitCurrent(Promise.all([reference.play(),self.play(),rateReady]),isCurrent);
+    const launches=[launchClock(reference),launchClock(self)];
+    await waitCurrent(Promise.all([...launches.map(v=>v.promise),rateReady]),isCurrent);
     if(!isCurrent())throw new CanceledStart();
-    await settleStartupClocks(reference,self,targetSelf,isCurrent);
+    await settleStartupClocks(reference,self,targetSelf,isCurrent,launches.map(v=>v.clock));
     return true;
    }catch(error){if(error instanceof CanceledStart)return false;throw error;}
   }
@@ -114,7 +122,7 @@ export async function startComparison(reference:Media,self:Media|null,targetSelf
  * starts. Observe that startup once, then hold the ahead player until the other
  * catches it. This avoids introducing another decode delay through a final seek.
  * There is no background drift correction after this startup barrier. */
-async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean){
+async function observeStartupClocks(reference:ClockMedia,self:ClockMedia,isCurrent:()=>boolean){
  let initial:number[]|null=null,observing=Date.now();const began=Date.now();
  await new Promise<void>((resolve,reject)=>{
   const check=()=>{
@@ -127,10 +135,23 @@ async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSe
   };check();
  });
  if(!isCurrent())throw new CanceledStart();
- const gap=targetSelf(reference.currentTime)-self.currentTime;
  if(reference.paused||self.paused)throw new Error('動画が停止しました。再生位置を戻して、もう一度同期再生してください。');
+}
+async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSelf:(t:number)=>number,isCurrent:()=>boolean,launches?:ClockLaunch[]){
+ await observeStartupClocks(reference,self,isCurrent);
+ const gap=targetSelf(reference.currentTime)-self.currentTime;
  if(Math.abs(gap)<=self.playbackRate*.025)return;
- const ahead=gap>0?reference:self;ahead.pause();
+ const ahead=gap>0?reference:self,launch=launches?.[gap>0?0:1];
+ // Account for asynchronous play acknowledgement BEFORE the other video catches up;
+ // otherwise this very pause/play correction introduces a new, opposite lag.
+ // Do not extrapolate a one-off decoder freeze after that acknowledgement into
+ // the next resume: seek/audio warmup stalls need not repeat. The final clock
+ // observation, rather than this estimate, decides whether startup succeeded.
+ // A late Promise alone may just be delayed JavaScript delivery while media
+ // already plays. Never predict more delay than the source clock also lost.
+ const latency=launch?.valid&&launch.rate===ahead.playbackRate?Math.min(launch.delay,Math.max(0,(performance.now()-launch.at)/1000-(ahead.currentTime-launch.position)/launch.rate)):0;
+ const lead=latency*self.playbackRate;
+ ahead.pause();
  await new Promise<void>((resolve,reject)=>{
   const deadline=Date.now()+8000;
   const check=()=>{
@@ -138,13 +159,17 @@ async function settleStartupClocks(reference:ClockMedia,self:ClockMedia,targetSe
    const behind=ahead===reference?self:reference;
    if(behind.paused||behind.currentTime>=behind.duration-.001){reject(new Error('動画の終端です。再生位置を戻して、もう一度同期再生してください。'));return;}
    const remaining=targetSelf(reference.currentTime)-self.currentTime;
-   if(ahead.paused&&(gap>0?remaining<=0:remaining>=0)){resolve();return;}
+   if(ahead.paused&&(gap>0?remaining<=lead:remaining>=-lead)){resolve();return;}
    if(Date.now()>=deadline){reject(new Error('動画の再生時計が進みません。読み込みを待って再生し直してください。'));return;}
    setTimeout(check,4);
   };check();
  });
  if(!isCurrent())throw new CanceledStart();
  await waitCurrent(ahead.play(),isCurrent);
+ // Never announce a successful start based only on play()'s Promise. Do not
+ // loop corrections, seek or change rates if the decoder is still unstable.
+ await observeStartupClocks(reference,self,isCurrent);
+ if(Math.abs(targetSelf(reference.currentTime)-self.currentTime)>self.playbackRate*.075)throw new Error('再生開始がずれたため停止しました。もう一度「同期再生」を押してください。');
 }
 export async function correctFollower(reference:Media,self:Media,targetSelf:(t:number)=>number,selfRate:number,targetReference?: (t:number)=>number,isCurrent:()=>boolean=()=>true){
  const follower=targetReference?reference:self,target=targetReference?targetReference(self.currentTime):targetSelf(reference.currentTime);
