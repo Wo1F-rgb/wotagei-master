@@ -29,6 +29,7 @@ jobs:
       - run: node tests/built-beat-editor.mjs
       - run: node tests/built-paused-clocks.mjs
       - run: node tests/built-late-start.mjs
+      - run: node tests/built-prepared-entry.mjs
       - run: node tests/built-sync.mjs
       - run: node tests/built-camera.mjs
       - run: node tests/built-camera-zoom.mjs

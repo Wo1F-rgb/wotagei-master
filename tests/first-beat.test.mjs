@@ -1,7 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {firstBeatStart} from '../lib/first-beat.ts';
+import {firstBeatStart,sharedVideoStart} from '../lib/first-beat.ts';
 import {mapSelfTime,comparisonRates,beatAt} from '../lib/rhythm.ts';
 import {restoreTempo} from '../lib/tempo-model.ts';
+test('file-zero starts advance only to the first shared frame without moving beat origins',()=>{
+ for(const origins of [[2,.9],[3.9,1],[0,2],[2,0]])for(const bpm of [[150.119,139.879],[120,150]]){
+  const saved=[...origins],start=sharedVideoStart(0,origins,bpm),own=mapSelfTime(start,...origins,...bpm);
+  assert.ok(start>=0&&own>=-1e-12);assert.ok(start===0||Math.abs(own)<1e-12);
+  assert.deepEqual(origins,saved);assert.equal(sharedVideoStart(12,origins,bpm),12);
+  for(const rate of [.5,1,1.25]){const speeds=comparisonRates(rate,...bpm,0);assert.ok(Math.abs(mapSelfTime(start+speeds.reference,...origins,...bpm)-(own+speeds.self))<1e-10);}
+ }
+});
 
 test('different clip starts use the two marked first beats, with no extra beat or file-start offset',()=>{
  const origins=[2.34,1.12],bpm=[150,120];

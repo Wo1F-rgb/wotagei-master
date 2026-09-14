@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState,type SetStateAction } from 'react';
 import { clamp, mapSelfTime, comparisonRates } from './rhythm';
 import { prepareSoloPlayback, restoreComparisonAudio } from './solo';
-import { firstBeatStart } from './first-beat';
+import { firstBeatStart, sharedVideoStart } from './first-beat';
 import { restoreTempo, type BpmKind } from './tempo-model';
 import { optimizeVideo } from './optimize-video';
 import { startComparison, startDelayedFollower } from './start-playback';
@@ -232,8 +232,20 @@ export function useStudio(){
   }
   const requested=seekPositions.current.read(r),ownRequested=self.current?seekPositions.current.read(self.current):0;
   if((r.ended&&requested>=durations[0]-.01)||(!camera&&self.current?.ended&&ownRequested>=durations[1]-.01)||(durations[0]>0&&requested>=durations[0]-.01))seek(loop.enabled?loop.start:origins[0],true);
+  let startNotice='';
   const position=seekPositions.current.read(r);
   if(loop.enabled&&(position<loop.start||position>=loop.end))seek(loop.start,true);
+  // Prepare both local files together instead of cold-starting the second
+  // decoder after the reference has already begun its intro.
+  if(!youtubeActive.current&&!camera&&sources[1]){
+   const current=seekPositions.current.read(r),shared=sharedVideoStart(current,origins,bpm);
+   if(shared>current+1e-7){
+    // A loop needs the same 100 ms minimum in the shared range as elsewhere.
+    // Otherwise a loop in the unpaired intro would restart forever.
+    if(loop.enabled&&loop.end-shared<.1){const next={...loop,enabled:false};snapshot.current={...snapshot.current,loop:next};setLoop(next);startNotice='共通区間が短いため、ループを解除しました。';}
+    seek(shared,true);
+   }
+  }
   try{
    if(click)enableAudio();
    if(audio.current)void audio.current.resume();
@@ -242,7 +254,7 @@ export function useStudio(){
    if(self.current&&sources[1]&&!camera){
     if(self.current.playbackRate!==clamp(sr,.25,4))self.current.playbackRate=clamp(sr,.25,4);
     const target=mapSelfTime(seekPositions.current.read(r),origins[0],origins[1],bpm[0],bpm[1]);
-    followerBeforeStart.current=target<0;
+    followerBeforeStart.current=target< -1e-6;
     if(!targetReference){const position=clamp(target,0,durations[1]);if(Math.abs(seekPositions.current.read(self.current)-position)>(timingChanged.current?1e-7:sr*.075))seekPositions.current.seek(self.current,position);}
     else followerBeforeStart.current=false;
 
@@ -257,7 +269,7 @@ export function useStudio(){
    }):undefined;
    const started=await startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current,rateReady,targetReference,seekPositions.current.read(r));
    if(!started)return;
-   seekPositions.current.clear(r);if(self.current)seekPositions.current.clear(self.current);timingChanged.current=false;starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice);
+   seekPositions.current.clear(r);if(self.current)seekPositions.current.clear(self.current);timingChanged.current=false;starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice||startNotice);
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}
  }
  function applyFirstBeats(next:number[],save=false){

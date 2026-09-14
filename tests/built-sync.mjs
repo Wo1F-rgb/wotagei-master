@@ -77,7 +77,7 @@ try{
  const nudged=(await state()).origins;assert.ok(nudged[1]>.8);await measure('nudge and resume');assert.deepEqual((await state()).origins,nudged);
  // Changing views and seeking must retain the same saved beat mapping.
  await page.getByRole('tab',{name:'重ねる',exact:true}).click();await measure('overlay');await page.getByRole('tab',{name:'比較',exact:true}).click();
- const seek=page.locator('.track-seek').getByRole('slider');await seek.press('Home');await measure('pre-roll then follower entry',{seconds:3,free:false,warmup:1400});
+ const seek=page.locator('.track-seek').getByRole('slider');await seek.press('Home');await measure('file-zero entry starts in the shared range',{seconds:3,free:false,warmup:1400});
  assert.deepEqual((await state()).origins,nudged);
  for(const master of [0,1]){
   await dismiss();await button(`${master?'自分':'お手本'}の曲を主役にする`).click();await origins([1.25,.8]);

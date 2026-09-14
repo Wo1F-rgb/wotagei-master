@@ -95,7 +95,8 @@ there is no periodic seeking during playback. A larger paused mismatch over
 follower before starting. Even a
 1 ms manual nudge uses the exact new mapping; the ordinary-resume tolerance
 must not swallow an intentional edit. New media still use cold preparation.
-Pre-roll follower entry remembers successful preparation too.
+The original pre-roll follower entry remembered successful preparation too;
+native pairs now use the shared-range entry described in the final section.
 
 The full-video preparation cover and the React `preparing` mute override were
 removed. The start button remains cancelable during genuine decoder waits;
@@ -208,9 +209,9 @@ Native pair startup now records each Play acknowledgement delay, caps it by
 the source clock's actual lost time, and resumes the held player that much
 earlier. A second clock observation checks the
 result after both clocks advance. It never performs another correction loop,
-seek, or playback-rate change. If the startup remains over 75 ms apart, the
-application stops with a retry message instead of claiming synchronization.
-This threshold is a guard, not an iPhone accuracy guarantee.
+seek, or playback-rate change. This version also stopped with a retry message
+when startup remained over 75 ms apart. That refusal caused a reported
+stop/retry loop and is removed by the subsequent prepared-entry fix below.
 
 The estimate intentionally excludes a clock freeze occurring after Play has
 resolved: a one-off seek/audio warmup may not repeat on the next resume. The
@@ -229,3 +230,75 @@ physical iPhone Safari behavior and camera sensor latency remain unmeasured.
 0.5 / 1 / 1.25 speed, plus cancellation and restart (7 runs; maximum 37.5 ms).
 The test also checks decoded frame progress, unchanged nominal rates, zero
 extra startup seeks, and no preparation cover. It gates Pages deployment.
+
+## 2026-09-14: prepare both files before entering their shared range
+
+The reported “自分の動画を再生できません” notice identifies the delayed-follower
+entry path: the reference could play its intro alone, then launch the other
+decoder cold at its first mapped frame. That path bypassed initial two-file
+preparation. Combined with the startup phase refusal above, it could leave the
+user unable to start the same comparison repeatedly.
+
+For native file pairs, including downloaded X clips, Play now advances a
+requested position in the unpaired intro to
+`max(requestedReferenceTime, 0, Or - Os * Bs / Br)`. Both players are positioned
+before either enters audible comparison. The saved origins, BPMs and selected
+soundtrack are unchanged. This also applies after Home, scrubbing and immediate
+BPM saves. Camera practice and YouTube embeds retain their separate paths.
+
+Cold preparation now waits for actual clock progress with a decoded current
+frame, normally 250 ms of playback, before pausing and pinning both requested
+positions. Play acknowledgement alone cannot finish preparation. A pending
+forward/backward seek jump resets the observation rather than counting as
+playback. Short tails still require positive progress. Optional Safari video
+quality counters are not a readiness gate because they may remain stale.
+Prepared-pair resume retains its path without additional warmup seeks.
+
+The browser regression additionally exposed a 264 ms residual with fixed
+250 / 600 ms native Play delays immediately after Home. Source-level readiness
+was cached even though normalizing the start had an in-flight seek. A previous
+Play is no longer sufficient to skip preparation: both current frames must
+be decoded, not seeking, and at the requested reference destination. Pending
+seeks, including stale native getters, use the cold preparation barrier before
+audible playback. Ordinary Pause/Play keeps the immediate resume path. This
+also avoids treating a one-off decode wait as recurring activation latency.
+Startup observation also resets its baseline if the native getter publishes a
+seek jump after `seeking` has already cleared. A late timestamp cannot leave
+the observer waiting for the old, later position after a backward seek.
+
+The one-time start observation/hold is retained, but a remaining phase gap no
+longer throws a stop/retry error. This is not a claim that unpredictable delays
+on every subsequent native Play can be eliminated. Real decode failures,
+non-advancing clocks and cancellation still terminate preparation. Manual beat
+adjustment remains available and ongoing playback does not chase the clocks.
+
+Loops crossing the common start begin at the shared position. If less than the
+existing 100 ms minimum loop length remains before the loop end, Play disables
+the loop with a short notice and starts the shared range. It cannot repeatedly
+jump from an unpaired loop back into preparation. The original intro remains
+available through each video's individual settings preview.
+
+Unit regressions cover common-range mapping, both BPM orders, cold post-Promise
+freezes, stale quality counters, pending seek jumps, short tails and cancellation.
+They also preserve the fast resume path for sub-millisecond timestamp rounding,
+using the same 1 ms tolerance as seek settlement.
+
+`tests/built-prepared-entry.mjs` is required for Pages publication. Its 20 real
+video runs cover Home, both soundtrack masters at 0.5 / 1 / 1.25 speed, delayed
+native Play, post-Promise clock publication, invalid pre-roll loops, and
+cancel/restart. It checks the first actual Play positions, preserved BPM/origins,
+decoded-frame advancement, bounded startup calls and no steady seeks/retries.
+The old `80b3ad0` build failed the pre-roll loop and cold-entry cases. The final
+readiness strategy passed; the cold and fixed-delay combinations had a maximum
+sampled clock gap of 23.6 ms on local Chromium. The separate adversarial repeated
+freeze cases require continued playback without retries; they do not promise a
+90 ms phase bound for arbitrary changing delays. These injected conditions are
+not measurements from a physical iPhone.
+
+The same 20-run prepared-entry suite passed with the user's two original MP4s
+read locally only, including first frame preparation, fixed delayed Play and
+cancel/restart. Cold/fixed-delay combinations stayed within 25.2 ms sampled
+clock gap. The 261-unit suite, type checking and the 12 ordinary warm resumes
+in the beat-editor/fullscreen regression also passed. Ordinary resume remains
+uncovered and does not repeat cold warmup. Private clips are not committed or
+included in the Pages build.

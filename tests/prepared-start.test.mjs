@@ -30,6 +30,59 @@ test('cold decoders prepare silently, wait for both seeks and start on the origi
  assert.equal(r.muted,false);assert.equal(s.muted,true);
  r.pause();s.pause();
 });
+test('cold preload waits for actual moving frames even when play resolves before the decoder loads',async()=>{
+ class ColdClock extends Decoder{
+  warmAdvance=0;
+  getVideoPlaybackQuality(){return {totalVideoFrames:0,droppedVideoFrames:0};}
+  get currentTime(){return this.value+(this.paused?0:Math.max(0,performance.now()-this.since)/1000*this.playbackRate);}
+  set currentTime(value){super.currentTime=value;}
+  async play(){await super.play();if(this.calls===1)this.since+=550;}
+  pause(){if(this.calls===1&&!this.paused)this.warmAdvance=Math.max(this.warmAdvance,this.currentTime-this.value);super.pause();}
+ }
+ const r=new ColdClock([2,2]),s=new ColdClock([2,2]);s.muted=true;s.playbackRate=1.25;
+ try{
+  assert.equal(await startComparison(r,s,t=>3+(t-2)*1.25,1.25,()=>true),true);
+  assert.ok(r.warmAdvance>=.25&&s.warmAdvance>=.25*1.25,'preparation must decode a sequence, not pause at the Play acknowledgement');
+  assert.equal(r.starts[1].time,2);assert.equal(s.starts[1].time,3);
+  assert.ok(Math.abs(s.currentTime-(3+(r.currentTime-2)*1.25))<.04);
+ }finally{r.pause();s.pause();}
+});
+
+test('a late pending seek is not counted as playback during cold preparation',async()=>{
+ for(const destination of [.4,9]){
+  class PendingSeek extends Decoder{
+   warmAdvance=0;settled=false;
+   get currentTime(){return this.value+(this.paused?0:Math.max(0,performance.now()-this.since)/1000*this.playbackRate);}
+   set currentTime(value){super.currentTime=value;}
+   async play(){
+    await super.play();
+    if(this.calls===1){
+     this.since=performance.now()+1000;
+     setTimeout(()=>{this.value=destination;this.since=performance.now()+350;this.settled=true;},80);
+    }
+   }
+   pause(){if(this.calls===1&&!this.paused&&this.settled)this.warmAdvance=Math.max(this.warmAdvance,this.currentTime-destination);super.pause();}
+  }
+  const r=new PendingSeek([2,2]),s=new PendingSeek([2,2]);s.muted=true;
+  try{
+   assert.equal(await startComparison(r,s,t=>t,1,()=>true,undefined,undefined,destination),true);
+   assert.ok(r.warmAdvance>=.25&&s.warmAdvance>=.25,'a forward/backward seek jump must be followed by real clock progress before pinning');
+   assert.equal(r.starts[1].time,destination);assert.equal(s.starts[1].time,destination);
+  }finally{r.pause();s.pause();}
+ }
+});
+
+test('near the end, cold preparation still observes progress instead of accepting only play acknowledgement',async()=>{
+ class ShortTail extends Decoder{
+  duration=2.12;warmAdvance=0;
+  pause(){if(this.calls===1&&!this.paused)this.warmAdvance=Math.max(this.warmAdvance,this.currentTime-this.value);super.pause();}
+ }
+ const r=new ShortTail([2,2]),s=new ShortTail([2,2]);s.muted=true;
+ try{
+  assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);
+  assert.ok([r,s].every(m=>m.warmAdvance>0&&m.warmAdvance<.12),'warmup must advance without consuming the entire tail');
+ }finally{r.pause();s.pause();}
+});
 
 test('a half-second second-launch delay is corrected once against either chosen soundtrack',async()=>{
  for(const master of [0,1]){

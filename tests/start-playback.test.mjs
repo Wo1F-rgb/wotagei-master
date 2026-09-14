@@ -32,6 +32,15 @@ test('warm resume corrects asymmetric decoder launch once, without another seek'
  assert.deepEqual([r.seeks,s.seeks],seeks);assert.deepEqual([r.starts,s.starts],[starts[0]+2,starts[1]+1]);
  assert.ok(Math.abs(map(r.currentTime)-s.currentTime)<.03);r.pause();s.pause();
 });
+test('a sub-millisecond settled timestamp difference does not repeat cold preparation',async()=>{
+ const r=new ResumeMedia(),s=new ResumeMedia();
+ await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();
+ const seeks=[r.seeks,s.seeks],starts=r.starts+s.starts;
+ try{
+  assert.equal(await startComparison(r,s,t=>t,1,()=>true,undefined,undefined,r.currentTime+.0005),true);
+  assert.deepEqual([r.seeks,s.seeks],seeks);assert.equal(r.starts+s.starts,starts+2);
+ }finally{r.pause();s.pause();}
+});
 test('cold preparation pins an explicit seek destination instead of a stale native getter',async()=>{
  const r=new ResumeMedia(),s=new ResumeMedia();r.value=12;s.value=15;s.playbackRate=1.25;
  await startComparison(r,s,t=>1+(t-3.9)*1.25,1.25,()=>true,undefined,undefined,3.9);
@@ -71,12 +80,45 @@ test('the correction resume accounts for latency on both players, without rate c
   }finally{r.pause();s.pause();}
  }
 });
-test('a changing resume latency cannot silently be accepted as a synchronized start',async()=>{
+test('changing resume latency cannot lock playable videos into a forced stop/retry loop',async()=>{
  const r=new ResumeMedia(),s=new ResumeMedia();await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();
  s.playDelay=280;const original=r.play.bind(r);let calls=0;
  r.play=async()=>{if(++calls===2)r.playDelay=300;await original();};
- try{await assert.rejects(startComparison(r,s,t=>t,1,()=>true),/再生開始がずれ/);}
+ try{assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);assert.equal(r.paused,false);assert.equal(s.paused,false);assert.equal(calls,2);}
  finally{r.pause();s.pause();}
+});
+test('a pending seek prepares the new frame pair even when the source played before',async()=>{
+ for(const staleGetter of [false,true]){
+  const r=new ResumeMedia(),s=new ResumeMedia();r.playbackRate=.5;s.playbackRate=.5*150.119/139.879;
+  const map=t=>1+(t-3.9)*150.119/139.879;r.value=3.9;s.value=1;
+  await startComparison(r,s,map,s.playbackRate,()=>true);r.pause();s.pause();
+  r.value=staleGetter?12:3.9;s.value=map(r.value);r.seeking=true;s.seeking=true;
+  r.playDelay=250;s.playDelay=600;
+  const seeks=[r.seeks,s.seeks],starts=r.starts+s.starts;
+  setTimeout(()=>{r.value=3.9;s.value=1;r.seeking=false;s.seeking=false;},80);
+  try{
+   await startComparison(r,s,map,s.playbackRate,()=>true,undefined,undefined,3.9);
+   assert.ok(Math.abs(map(r.currentTime)-s.currentTime)/s.playbackRate<.04,'an in-flight seek must be prepared before accepting playback');
+   assert.deepEqual([r.seeks,s.seeks],seeks.map(n=>n+1),'pin each requested position once after warming its decoder');
+   assert.ok(r.starts+s.starts>=starts+4&&r.starts+s.starts<=starts+5,'warm both, start both, with at most one ahead-player hold');
+  }finally{r.pause();s.pause();}
+ }
+});
+test('late seek publication without a seeking flag cannot strand startup on the old timestamp',async()=>{
+ class StalePosition extends ResumeMedia{
+  publishAt=0;oldTime=12;
+  get currentTime(){return performance.now()<this.publishAt?this.oldTime:super.currentTime;}
+  set currentTime(value){super.currentTime=value;}
+ }
+ const r=new StalePosition(),s=new StalePosition();const map=t=>1+(t-3.9)*1.25;s.playbackRate=1.25;
+ r.value=3.9;s.value=1;await startComparison(r,s,map,1.25,()=>true);r.pause();s.pause();
+ r.value=3.9;s.value=1;r.oldTime=12;s.oldTime=map(12);r.publishAt=s.publishAt=performance.now()+200;
+ let current=true;const timer=setTimeout(()=>{current=false;},1500);
+ const seeks=[r.seeks,s.seeks];
+ try{
+  assert.equal(await startComparison(r,s,map,1.25,()=>current,undefined,undefined,3.9),true,'old timestamps must not require eight seconds or a user retry');
+  assert.ok(Math.abs(map(r.currentTime)-s.currentTime)<.04);assert.deepEqual([r.seeks,s.seeks],seeks.map(n=>n+1));
+ }finally{clearTimeout(timer);current=false;r.pause();s.pause();}
 });
 test('the final held source may freeze after its play Promise already resolved',async()=>{
  const r=new ResumeMedia(),s=new ResumeMedia();await startComparison(r,s,t=>t,1,()=>true);r.pause();s.pause();
@@ -84,7 +126,8 @@ test('the final held source may freeze after its play Promise already resolved',
  const original=r.play.bind(r);let calls=0;const seeks=[r.seeks,s.seeks];
  r.play=async()=>{await original();if(++calls===2)r.since+=500;};
  try{
-  await assert.rejects(startComparison(r,s,t=>t,1,()=>true),/再生開始がずれ/);
+  assert.equal(await startComparison(r,s,t=>t,1,()=>true),true);
+  assert.equal(r.paused,false);assert.equal(s.paused,false);
   assert.deepEqual([r.seeks,s.seeks],seeks);assert.equal(calls,2,'do not keep retrying the unstable decoder');
  }finally{r.pause();s.pause();}
 });
