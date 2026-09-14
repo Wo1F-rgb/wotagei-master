@@ -10,6 +10,7 @@ import {SeekPositions} from './seek-position';
 import {upcomingBeatCues} from './beat-cues';
 import {fitBeatGrid,type BeatGrid} from './beat-grid';
 import {YouTubeMedia,type YouTubeLink} from './youtube';
+import {configuredYouTubeImport,fetchYouTubeFile} from './youtube-import';
 import {resolveYouTubeRate} from './youtube-rate';
 import {MIN_PRACTICE_RATE,MAX_PRACTICE_RATE} from './practice-rate';
 import {nudgeBeatOrigin,NUDGE_SECONDS,NUDGE_STEP_KEY,restoreNudgeStep,type NudgeResult} from './manual-timing';
@@ -23,7 +24,7 @@ import {recordingFile} from './recording-save';
 import {useRecordingSave} from './use-recording-save';
 import {cameraDevices as listCameraDevices,readCameraLens,applyCameraZoom,cameraZoomTarget,defaultCameraLens,type CameraDevice} from './camera-lenses';
 import {requestRecordingSound,recordingSoundError,type RecordingSound} from './recording-sound';
-export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; twitter?:TwitterSource; instance?:number };
+export type Source = { url: string; name: string; key: string; youtube?: YouTubeLink; youtubeFile?:YouTubeLink; twitter?:TwitterSource; instance?:number };
 export type Alignment = { x: number; y: number; scale: number; rotation: number; opacity: number; perspectiveX:number; perspectiveY:number };
 const defaultAlignment: Alignment = {x:0,y:0,scale:1,rotation:0,opacity:.5,perspectiveX:0,perspectiveY:0};
 const initialSources: (Source | null)[] = [null,null];
@@ -39,7 +40,7 @@ export function useStudio(){
   }catch(e){if(linkRequest.current===job&&lifecycle.current){if(job.signal.reason?.name==='TimeoutError')setNotice(job.signal.reason.message);else if(!job.signal.aborted)setNotice(e instanceof TypeError?'Xの動画を取得できません。通信を確認して再度読み込むか、動画ファイルを選んでください。':e instanceof Error?e.message:'Xの動画を取得できませんでした。');}return false;
   }finally{clearTimeout(timer);if(linkRequest.current===job){linkRequest.current=null;setLinkLoading(false);}}
  }
- const youtubeLoadSequence=useRef(0);
+ const youtubeLoadSequence=useRef(0),referenceStart=useRef<{url:string;time:number}|null>(null);
  const youtube=useRef<YouTubeMedia|null>(null), youtubeActive=useRef(false),starting=useRef(false);
  const [youtubeReady,setYoutubeReady]=useState(false),[youtubeRates,setYoutubeRates]=useState([1]);
  const referenceMedia=()=>youtubeActive.current?youtube.current:reference.current;
@@ -129,7 +130,23 @@ export function useStudio(){
  }
  function youtubeRate(value:number){if(starting.current||liveRatePending.current||solo.current!==null||previewCue.current!==null)return;if(Number.isFinite(value)&&value>0){const next=value*(soundChoice.current===1?snapshot.current.bpm[0]/snapshot.current.bpm[1]:1);snapshot.current={...snapshot.current,rate:next};setRateState(next);youtubeMetadata();}}
  function youtubeError(message:string){pause();setNotice(message);}
- function loadYoutube(link:YouTubeLink){
+ async function loadYoutube(link:YouTubeLink){
+  cancelLinkLoad();pause();const job=new AbortController();linkRequest.current=job;setLinkLoading(true);setNotice('');
+  const timer=setTimeout(()=>job.abort(new DOMException('YouTubeの取り込みがタイムアウトしました。','TimeoutError')),150000);
+  try{
+   const endpoint=await configuredYouTubeImport();
+   if(job.signal.aborted||linkRequest.current!==job||!lifecycle.current)return false;
+   if(endpoint){
+    const file=await fetchYouTubeFile(link,endpoint,job.signal);
+    if(job.signal.aborted||linkRequest.current!==job||!lifecycle.current)return false;
+    linkRequest.current=null;setLinkLoading(false);loadFile(0,file,undefined,link);
+   }else{linkRequest.current=null;setLinkLoading(false);loadYoutubeEmbed(link);}
+   return true;
+  }catch(error){if(linkRequest.current===job&&lifecycle.current){if(job.signal.reason?.name==='TimeoutError')setNotice(job.signal.reason.message);else if(!job.signal.aborted)setNotice(error instanceof TypeError?'YouTubeの取得先に接続できませんでした。':error instanceof Error?error.message:'YouTubeを取得できませんでした。');}return false;}
+  finally{clearTimeout(timer);if(linkRequest.current===job){linkRequest.current=null;setLinkLoading(false);}}
+ }
+ function loadYoutubeEmbed(link:YouTubeLink){
+  referenceStart.current=null;
   cancelRecordingStart();cancelLinkLoad();
   void rememberLink(link.url,'youtube','YouTube · '+link.id).catch(e=>{if(lifecycle.current)setNotice(historyError(e));});
   pause();const previous=sources[0];if(previous&&!previous.youtube){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}youtubeActive.current=true;youtube.current=null;setYoutubeReady(false);setYoutubeRates([1]);files.current[0]=null;
@@ -291,7 +308,7 @@ export function useStudio(){
  }
  function removeVideo(index:number){
   if((index!==0&&index!==1)||recording)return;
-  if(index===0)cancelLinkLoad();
+  if(index===0){cancelLinkLoad();referenceStart.current=null;}
   pause();
   const released=[sources[index]?.url];
   files.current[index]=null;if(index===1)resetSound();
@@ -311,23 +328,23 @@ export function useStudio(){
   setDrift(0);resetAlignments();resetTaps(index);
   setNotice('');
  }
- function loadFile(index:number,file:File,twitter?:{link:TwitterSource;title:string}){
+ function loadFile(index:number,file:File,twitter?:{link:TwitterSource;title:string},youtubeFile?:YouTubeLink){
   cancelRecordingStart();
   if(!file.type.startsWith('video/')&&!/\.(mp4|mov|webm|m4v)$/i.test(file.name)){setNotice('動画ファイル（MP4・MOV・WebM）を選んでください。');return;}
-  if(index===0)cancelLinkLoad();
+  if(index===0){cancelLinkLoad();referenceStart.current=null;}
   pause();if(index===0){youtubeActive.current=false;youtube.current=null;setYoutubeReady(false);}files.current[index]=file;if(index===1){resetSound();optimization.current?.abort();originalSelf.current=null;restoreTime.current=null;setOptimized(false);setQuality(null);qualityTick.current={now:0,frames:0};stopCamera();}
   const url=URL.createObjectURL(file);urls.current.add(url);
-  const key=twitter?`twitter:${twitter.link.id}:${twitter.link.video}`:`${file.name}|${file.size}|${file.lastModified}`;
+  const key=youtubeFile?`youtube:${youtubeFile.id}`:twitter?`twitter:${twitter.link.id}:${twitter.link.video}`:`${file.name}|${file.size}|${file.lastModified}`;
   const previous=sources[index];if(previous){URL.revokeObjectURL(previous.url);urls.current.delete(previous.url);}
   if(previous?.key!==key)resetAlignments();
-  setSources(s=>s.map((v,i)=>i===index?{url,name:twitter?.title||file.name,key,...(twitter?{twitter:twitter.link}:{})}:v));setDurations(d=>d.map((v,i)=>i===index?0:v));
+  setSources(s=>s.map((v,i)=>i===index?{url,name:youtubeFile?`YouTube · ${youtubeFile.id}`:twitter?.title||file.name,key,...(twitter?{twitter:twitter.link}:{}),...(youtubeFile?{youtubeFile}:{})}:v));setDurations(d=>d.map((v,i)=>i===index?0:v));
   let saved:{bpm?:number;kind?:BpmKind;origin?:number;mirror?:boolean;tripod?:boolean}|null=null;
   try{saved=JSON.parse(localStorage.getItem('wotagei:video:'+key)||'null');}catch{}
   const restored=restoreTempo(saved);setBpm(v=>v.map((n,i)=>i===index?restored.bpm:n));setBpmKinds(v=>v.map((n,i)=>i===index?restored.kind:n));
   setOrigins(v=>v.map((n,i)=>i===index?Math.max(0,Number(saved?.origin)||0):n));
   const display=restoreVideoDisplay(saved);setMirrors(v=>v.map((n,i)=>i===index?display.mirror:n));setTripods(v=>v.map((n,i)=>i===index?display.tripod:n));
-  if(index===0){setTime(0);setRate(1);setLoop({enabled:false,start:0,end:0});}else{setSelfTime(0);}
-  void (twitter?rememberLink(twitter.link.url,'link',twitter.title):rememberFile(file)).catch(e=>{if(lifecycle.current&&files.current[index]===file)setNotice(historyError(e));});
+  if(index===0){referenceStart.current={url,time:youtubeFile?.start||0};setTime(youtubeFile?.start||0);setRate(1);setLoop({enabled:false,start:0,end:0});}else{setSelfTime(0);}
+  void (youtubeFile?rememberLink(youtubeFile.url,'youtube','YouTube · '+youtubeFile.id):twitter?rememberLink(twitter.link.url,'link',twitter.title):rememberFile(file)).catch(e=>{if(lifecycle.current&&files.current[index]===file)setNotice(historyError(e));});
   resetTaps(index);setNotice('');
  }
  function saveSettings(){persistSettings(false);}
@@ -413,7 +430,7 @@ export function useStudio(){
  }
  function markOrigin(index:number){pause();const el=index===0?referenceMedia():self.current,t=el?seekPositions.current.read(el):undefined;if(t!==undefined){adjustOrigin(index,t);setNotice('');}}
  function setSelfPosition(t:number){pause();if(self.current&&!camera){seekPositions.current.seek(self.current,clamp(t,0,durations[1]));setSelfTime(self.current.currentTime);}}
- function loaded(index:number){const el=index===0?referenceMedia():self.current;if(el&&Number.isFinite(el.duration)){if(index===1&&restoreTime.current!==null){seekPositions.current.seek(el,clamp(restoreTime.current,0,el.duration));setSelfTime(el.currentTime);restoreTime.current=null;} setDurations(d=>d.map((v,i)=>i===index?el.duration:v));setOrigins(v=>v.map((n,i)=>i===index?clamp(n,0,el.duration):n));}}
+ function loaded(index:number){const el=index===0?referenceMedia():self.current;if(el&&Number.isFinite(el.duration)){if(index===0&&referenceStart.current&&referenceStart.current.url===reference.current?.src){const t=clamp(referenceStart.current.time,0,el.duration);seekPositions.current.seek(el,t);setTime(t);referenceStart.current=null;}if(index===1&&restoreTime.current!==null){seekPositions.current.seek(el,clamp(restoreTime.current,0,el.duration));setSelfTime(el.currentTime);restoreTime.current=null;} setDurations(d=>d.map((v,i)=>i===index?el.duration:v));setOrigins(v=>v.map((n,i)=>i===index?clamp(n,0,el.duration):n));}}
  async function toggleRecording(requested:RecordingSound='none'):Promise<boolean>{
   if(recorder.current?.state==='recording'){recorder.current.stop();return false;}
   if(recordingJob.current){cancelRecordingStart();return false;}

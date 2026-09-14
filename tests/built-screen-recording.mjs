@@ -1,4 +1,4 @@
-// OS screen recording is deliberately not mocked as a successful recording.
+// IFrame fallback, camera lifecycle and optional real desktop tab-audio recording.
 // Default: deterministic IFrame API double + real camera frames for UI/lifecycle.
 // SCREEN_REAL_YOUTUBE=1: real iframe, and real desktop tab-audio MP4 capture.
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
@@ -27,7 +27,7 @@ try{
   Object.defineProperty(navigator.mediaDevices,'getDisplayMedia',{configurable:true,value:undefined});
   Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>false});
   Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:async options=>{
-   window.qaInputs.push(options);if(options.audio)throw Error('Screen route must not request a microphone');
+   window.qaInputs.push(options);if(options.audio)throw Error('Recording must not request a microphone');
    const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;const ctx=canvas.getContext('2d');
    const draw=()=>{ctx.fillStyle='#48378b';ctx.fillRect(0,0,640,360);ctx.fillStyle='#cdfa69';ctx.fillRect((window.qaFrames++*5)%550,100,80,80);};draw();
    const stream=canvas.captureStream(30),track=stream.getVideoTracks()[0],stop=track.stop.bind(track),timer=setInterval(draw,33);
@@ -57,20 +57,20 @@ try{
  await page.evaluate(()=>{window.qaOriginalVideo=document.querySelector('.deck-1 video');window.qaOriginalIframe=document.querySelector('.youtube-mount iframe');});
  await button('録画開始').click();await page.getByRole('dialog',{name:'YouTubeの録画音'}).waitFor();
  assert.equal(await button('タブの音で録画').count(),0);
- assert.equal(await page.locator('.recording-audio-dialog .button.primary').innerText(),'iPhoneの画面収録を使う');
- await screenshot('iphone-recording-choice');await button('iPhoneの画面収録を使う').click();
+ assert.equal(await button('iPhoneの画面収録を使う').count(),0);
+ assert.equal(await button('マイクで音を入れて録画').count(),0);
  for(const size of [{width:390,height:760},{width:844,height:390},{width:320,height:568}]){
-  await page.setViewportSize(size);const guide=page.getByRole('dialog',{name:'iPhoneの画面収録',exact:true});const bounds=await guide.boundingBox();
-  assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=size.width+1&&bounds.y+bounds.height<=size.height+1,'guide fits viewport');
-  await button('練習画面を開く').scrollIntoViewIfNeeded();await screenshot(`guide-${size.width}`);results.layouts.push({size,bounds});
+  await page.setViewportSize(size);const dialog=page.getByRole('dialog',{name:'YouTubeの録画音',exact:true});const bounds=await dialog.boundingBox();
+  assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=size.width+1&&bounds.y+bounds.height<=size.height+1,'dialog fits viewport');
+  await screenshot(`recording-${size.width}`);results.layouts.push({size,bounds});
  }
- await page.setViewportSize({width:390,height:760});await button('練習画面を開く').click();await page.locator('.studio-immersive').waitFor();
+ await page.setViewportSize({width:390,height:760});await button('戻る').click();await button('全画面にする').click();await page.locator('.studio-immersive').waitFor();
  assert.equal((await state()).playing,false,'preparation does not automatically start audio');
  assert.equal(await page.evaluate(()=>window.qaRecordings.length),0);assert.equal(await page.evaluate(()=>window.qaInputs.length),1);
  assert.equal(await page.locator('.stage-badge.rec').count(),0,'never pretend the OS recorder started');
  await button('再生').click();await button('一時停止').waitFor({timeout:30000});
  if(real){const video=page.frameLocator('.youtube-mount iframe').locator('video');await video.waitFor();assert.equal(await video.evaluate(v=>v.muted),false);}
- // Simulate the browser lifecycle around Control Center, not OS audio capture.
+ // Backgrounding and delayed camera resume must not restart canceled playback.
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));window.qaOriginalVideo.pause();});
  await button('再生').waitFor();assert.equal((await state()).playing,false);
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
@@ -91,10 +91,8 @@ try{
  await page.waitForTimeout(3300);assert.equal(await page.locator('.fullscreen-player-controls').getAttribute('data-visible'),'false');
  await screenshot('screen-practice-playing');await reveal();await screenshot('screen-practice-controls');
  await button('再生コントロールを隠す').click({position:{x:50,y:50}});await reveal();
- await button('画面収録の手順').click();await page.getByRole('dialog',{name:'iPhoneの画面収録'}).waitFor();
- await button('練習画面を開く').click();assert.equal(await page.locator('.studio-immersive').count(),1,'opening guide in fullscreen must not toggle fullscreen off');
  await button('全画面を終了').click();await page.getByRole('tab',{name:'重ねる',exact:true}).click();
- await button('録画開始').click();await button('iPhoneの画面収録を使う').click();await button('練習画面を開く').click();
+ await button('全画面にする').click();
  await page.setViewportSize({width:844,height:390});await screenshot('screen-practice-overlay');
  const preserved=await page.evaluate(()=>({video:window.qaOriginalVideo===document.querySelector('.deck-1 video'),iframe:window.qaOriginalIframe===document.querySelector('.youtube-mount iframe'),track:window.qaCamera.getVideoTracks()[0].readyState,calls:window.qaInputs.length,recorders:window.qaRecordings.length,overflow:document.documentElement.scrollWidth>innerWidth}));
  assert.deepEqual(preserved,{video:true,iframe:true,track:'live',calls:1,recorders:0,overflow:false});results.preserved=preserved;
@@ -113,7 +111,7 @@ try{
   if(qa){const bytes=await page.evaluate(async url=>Array.from(new Uint8Array(await fetch(url).then(r=>r.arrayBuffer()))),url);await writeFile(resolve(qa,'real-youtube-tab.mp4'),Buffer.from(bytes));}
   await button('練習に戻る').click();
  }else{
-  await button('全画面にする').click();await page.evaluate(()=>window.qaCamera.getVideoTracks()[0].stop());await button('再生').click();
+  await button('全画面にする').click();await page.locator('.fullscreen-player-controls[data-visible="true"]').waitFor();await button('一時停止').click();await button('再生').waitFor();await page.evaluate(()=>window.qaCamera.getVideoTracks()[0].stop());await button('再生').click();
   await page.getByRole('status').filter({hasText:'カメラが停止しました'}).waitFor();assert.equal((await state()).playing,false,'dead camera never silently records an empty preview');
  }
  assert.deepEqual(errors,[]);console.log(JSON.stringify(results));
