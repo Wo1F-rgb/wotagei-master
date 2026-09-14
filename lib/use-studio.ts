@@ -272,7 +272,7 @@ export function useStudio(){
    // Resume it on this explicit play gesture, alongside (not before) YouTube.
    const cameraReady=camera&&self.current?.paused?self.current.play().catch(()=>{throw new Error('カメラを再開できません。全画面を閉じてカメラを選び直してください。');}):undefined;
    const [started]=await Promise.all([startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current,rateReady,targetReference,seekPositions.current.read(r)),cameraReady]);
-   if(!started)return;
+   if(!started||id!==playRequest.current)return;
    seekPositions.current.clear(r);if(self.current)seekPositions.current.clear(self.current);timingChanged.current=false;starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice||startNotice);
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}
  }

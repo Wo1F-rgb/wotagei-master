@@ -75,6 +75,15 @@ try{
  await button('再生').waitFor();assert.equal((await state()).playing,false);
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
  assert.equal((await state()).playing,false,'returning to Safari never auto-plays audio');
+ if(!real){
+  // Camera play() can acknowledge later than the reference. Canceling during
+  // that gap must not let a late camera acknowledgment restart app playback.
+  await page.evaluate(()=>{const video=window.qaOriginalVideo,original=video.play.bind(video);video.play=()=>{const playing=original();return new Promise((resolve,reject)=>{window.qaLatePreview=()=>playing.then(resolve,reject);});};});
+  await button('再生').click();await page.waitForFunction(()=>!!window.qaLatePreview&&window.qaYouTube.getPlayerState()===1);await page.waitForTimeout(300);
+  await button('再生準備を中止').click();await page.evaluate(()=>{delete window.qaOriginalVideo.play;window.qaLatePreview();});await page.waitForTimeout(150);
+  assert.equal((await state()).playing,false,'a late preview acknowledgment respects cancel');
+  await page.evaluate(()=>window.qaOriginalVideo.pause());
+ }
  const before=(await state()).time;await button('再生').click();await button('一時停止').waitFor({timeout:30000});
  await page.waitForFunction(()=>!window.qaOriginalVideo.paused);
  await page.waitForFunction(t=>window.qaTools.read_practice_state.execute({}).time>t+.15,before);
