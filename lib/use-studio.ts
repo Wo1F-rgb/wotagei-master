@@ -217,6 +217,7 @@ export function useStudio(){
   solo.current=null;setSoloPlaying(null);restoreComparisonAudio(r,self.current,soundChoice.current);
   if(optimizing){setNotice('軽量化が終わるか中止してから再生してください。');return;}
   if(!r||!sources[0]||(!youtubeActive.current&&durations[0]<=0)){setNotice('先にお手本の動画を読み込んでください。');return;}
+  if(camera&&!stream.current?.getVideoTracks().some(track=>track.readyState==='live')){setNotice('カメラが停止しました。全画面を閉じてカメラを選び直してください。');return;}
   const rates=comparisonRates(rate,bpm[0],bpm[1],soundChoice.current),sr=rates.self;
   if(sources[1]&&!camera&&durations[1]<=0){setNotice('自分の動画の読み込みが終わってから再生してください。');return;}
   if(!camera&&(bpmKinds[0]==='unset'||(sources[1]&&bpmKinds[1]==='unset'))){setNotice('各動画の「設定 → 拍・BPM」で拍タップ・自動解析のいずれかを行ってください。');return;}
@@ -267,7 +268,10 @@ export function useStudio(){
     if(self.current&&sources[1]&&!camera)self.current.playbackRate=chosen.self;
     if(chosen.fallback)speedNotice=`YouTubeの対応速度：×${Number(chosen.rate.toFixed(4))}`;
    }):undefined;
-   const started=await startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current,rateReady,targetReference,seekPositions.current.read(r));
+   // Control Center can pause Safari's live preview without ending its track.
+   // Resume it on this explicit play gesture, alongside (not before) YouTube.
+   const cameraReady=camera&&self.current?.paused?self.current.play().catch(()=>{throw new Error('カメラを再開できません。全画面を閉じてカメラを選び直してください。');}):undefined;
+   const [started]=await Promise.all([startComparison(r,sources[1]&&!camera?self.current:null,t=>mapSelfTime(t,origins[0],origins[1],bpm[0],bpm[1]),sr,()=>id===playRequest.current,rateReady,targetReference,seekPositions.current.read(r)),cameraReady]);
    if(!started)return;
    seekPositions.current.clear(r);if(self.current)seekPositions.current.clear(self.current);timingChanged.current=false;starting.current=false;running.current=true;setPreparing(false);setPlaying(true);setTime(r.currentTime);if(self.current&&!camera)setSelfTime(self.current.currentTime);setNotice(speedNotice||startNotice);
   }catch(e){if(id!==playRequest.current)return;pause();setNotice(e instanceof Error?e.message:'動画を再生できません。もう一度再生を押すか、MP4形式の動画でお試しください。');}

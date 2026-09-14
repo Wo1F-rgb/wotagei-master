@@ -2,6 +2,7 @@
 import {useCallback,useEffect,useRef,useState,type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type SyntheticEvent} from 'react';
 import {FastForward,Pause,Play,Rewind,X} from 'lucide-react';
 import {clampMediaTime,formatMediaTime} from '@/lib/fullscreen-player-controls';
+import {practiceRateOptions} from '@/lib/practice-rate';
 import './fullscreen-player-controls.css';
 
 const HIDE_AFTER_MS=3000;
@@ -13,13 +14,16 @@ export type FullscreenPlayerControlsProps={
  time:number;
  duration:number;
  tracking?:{label:string;disabled:boolean;open:()=>void;toggle?:()=>void;enabled?:boolean};
+ speed?:{value:number;change:(value:number)=>void};
+ screenRecordingHelp?:()=>void;
+ feedback?:string;
  onPlay:()=>void;
  onPause:()=>void;
  onSeek:(time:number)=>void;
  onExit:()=>void;
 };
 
-export function FullscreenPlayerControls({active,playing,preparing=false,time,duration,tracking,onPlay,onPause,onSeek,onExit}:FullscreenPlayerControlsProps){
+export function FullscreenPlayerControls({active,playing,preparing=false,time,duration,tracking,speed,screenRecordingHelp,feedback,onPlay,onPause,onSeek,onExit}:FullscreenPlayerControlsProps){
  const [visible,setVisible]=useState(false),[scrubTime,setScrubTime]=useState<number|null>(null),controls=useRef<HTMLDivElement>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const scrubbing=useRef(false),scrubValue=useRef(0),scrubWasPlaying=useRef(false);
  const latestPlay=useRef(onPlay);latestPlay.current=onPlay;
@@ -133,7 +137,9 @@ export function FullscreenPlayerControls({active,playing,preparing=false,time,du
     <button type="button" tabIndex={visible?0:-1} className="fullscreen-player-controls__button" aria-label="全画面を終了" onClick={onExit}><X aria-hidden="true"/></button>
    </div>
    <label className="fullscreen-player-controls__seek-label"><span className="sr-only">動画の再生位置</span><input type="range" tabIndex={visible?0:-1} min={0} max={safeDuration||1} step={.01} value={displayTime} disabled={disabled} aria-label="動画の再生位置" aria-valuetext={`${formatMediaTime(displayTime)} / ${formatMediaTime(safeDuration)}`} onClick={stopInteraction} onPointerDown={startPointerScrub} onPointerUp={endPointerScrub} onPointerCancel={endPointerScrub} onKeyDown={startKeyboardScrub} onKeyUp={endKeyboardScrub} onBlur={event=>finishScrub(scrubValue.current)} onChange={changeScrub}/></label>
+   {speed&&<div className="fullscreen-player-controls__practice-row"><label>速度 <select aria-label="全画面の練習速度" tabIndex={visible?0:-1} value={speed.value} disabled={preparing} onFocus={clearTimer} onBlur={scheduleHide} onChange={event=>{speed.change(Number(event.target.value));reveal();}}>{practiceRateOptions(speed.value).map(value=><option key={value} value={value}>×{Number(value.toFixed(4))}</option>)}</select></label>{screenRecordingHelp&&<button type="button" className="fullscreen-player-controls__tracking" tabIndex={visible?0:-1} onClick={screenRecordingHelp}>画面収録の手順</button>}</div>}
    {tracking&&<div className="fullscreen-player-controls__tracking-row"><button type="button" className="fullscreen-player-controls__tracking" aria-label="位置追従を設定" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.open}>{tracking.label} · 設定</button>{tracking.toggle&&<button type="button" className="fullscreen-player-controls__tracking" tabIndex={visible?0:-1} disabled={tracking.disabled} onClick={tracking.toggle}>{tracking.enabled?'追従を解除':'追従を再開'}</button>}</div>}
+   {feedback&&<p className="fullscreen-player-controls__help" role="status">{feedback}</p>}
   </div>
  </div>;
 }
