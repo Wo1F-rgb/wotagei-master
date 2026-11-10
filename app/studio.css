@@ -439,3 +439,40 @@
  .speed-settings:has(.nudge-step-setting)>[data-slot=slider]{grid-column:2;grid-row:3}
  .speed-settings:has(.nudge-step-setting)>.speed-presets{grid-column:2;grid-row:4}
 }
+
+/* Beat photos use the saved source grid; the existing players stay mounted. */
+.video-config [data-slot=tabs-trigger]{min-width:0;font-size:12px!important;padding-inline:3px}
+.configuring .deck.selected:has(.video-config[data-step=frames]){grid-template-rows:30px minmax(90px,1fr) minmax(0,232px)}
+.frames-content{padding:8px 10px}
+.beat-frames{display:flex;flex-direction:column;gap:7px;min-width:0}
+.beat-frames-empty{display:flex;gap:12px;flex-direction:column;align-items:start}
+.beat-frame-still{position:absolute;inset:0;background:#080b10;display:grid;place-items:center;z-index:4}
+.beat-frame-still img{width:100%;height:100%;object-fit:contain;min-height:0}
+.beat-frame-still>span{position:absolute;left:8px;bottom:8px;padding:3px 7px;border-radius:5px;background:#111a28d9;color:#edf4ff;font:12px monospace}
+.beat-frame-still>p{padding:16px;text-align:center;color:#c0cee2;font-size:13px}
+.beat-frame-navigation{display:grid;grid-template-columns:54px minmax(0,1fr) 54px;gap:8px;align-items:center}
+.beat-frame-navigation>.button{min-height:44px;padding:5px}
+.beat-frame-navigation>div{display:flex;flex-direction:column;align-items:center;font-variant-numeric:tabular-nums;gap:2px}
+.beat-frame-navigation strong{font-size:21px;color:#edf4ff;line-height:1.1}
+.beat-frame-navigation small{font-size:12px;font-weight:400;color:#aebed4}
+.beat-frame-navigation span{font-size:11px;color:#aebed4}
+.beat-frame-ruler{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));height:28px;background:#101722;border:1px solid #374354;border-radius:5px;overflow:hidden}
+.beat-frame-ruler button{border:0;border-left:1px solid #ccd8e5;background:transparent;font:12px monospace;color:#c5d4e8}
+.beat-frame-ruler button.current{background:var(--primary);color:#18220e;font-weight:700;border-left:2px solid white}
+.beat-frame-ruler button:disabled{opacity:.2}
+.beat-frame-range{width:100%;height:16px;accent-color:var(--primary);touch-action:pan-y}
+.beat-frame-actions{display:flex;gap:8px}
+.beat-frame-actions>.button{min-height:38px;gap:5px;font-size:13px}
+.beat-frame-actions>.primary{flex:1}
+.beat-frames .beat-frame-note{font-size:11px;line-height:1.35;margin:0}
+.beat-frame-progress{display:flex;align-items:center;gap:7px;font-size:12px}
+.beat-frame-progress progress{min-width:40px;width:100%;height:8px;accent-color:var(--primary);flex:1}
+.beat-frame-progress>.button{padding:4px 7px;min-height:32px}
+.beat-frame-save{display:grid;gap:6px;border-top:1px solid #405069;padding-top:8px;font-size:12px}
+.beat-frame-save .button{min-height:38px}
+.beat-frame-save small{color:#aebed4}
+.transport .beat-frame-entry{min-width:46px;font-size:10px}
+@media(orientation:portrait) and (max-width:370px){.practice-dock .transport-option{min-width:34px;font-size:10px;padding:0 2px}.practice-dock .transport-option svg{width:16px}.practice-dock .play-button{font-size:12px;min-width:54px;padding:0 3px;gap:3px}.transport .beat-frame-entry{min-width:40px}.video-config [data-slot=tabs-trigger]{font-size:11px!important;padding-inline:2px}}
+@media(orientation:landscape){.configuring .deck.selected:has(.video-config[data-step=frames]){grid-template-rows:30px minmax(0,1fr)}.studio:not(.editing):not(.aligning) .practice-dock>.transport{grid-template-columns:repeat(5,minmax(0,1fr))}}
+
+.beat-frame-save{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 7px}.beat-frame-save>strong,.beat-frame-save>small{grid-column:1/-1}.beat-frame-save>.primary{grid-column:1/-1}.beat-frame-save small{font-size:10px}.beat-frame-reset{border:0;background:none;color:#b4c5dc;text-decoration:underline;font-size:11px;padding:4px}.beat-frame-save>.button{font-size:12px;min-height:34px}
