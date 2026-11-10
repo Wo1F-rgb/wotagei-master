@@ -1,6 +1,6 @@
 {
   "app": "wotagei-master",
-  "sourceCommit": "323c9de8f9057de9eb01672e18ab3e41a6710b95",
-  "sourceRepository": "https://github.com/Wo1F-rgb/wotagei-master-web",
+  "sourceCommit": "5b61cd5792323e58ce2836850ece7d01089c032c",
+  "sourceRepository": "https://github.com/Wo1F-rgb/wotagei-master",
   "method": "prebuilt-static-branch"
 }
