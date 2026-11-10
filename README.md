@@ -201,7 +201,7 @@ npm run publish:pages -- --repo Wo1F-rgb/wotagei-master
 
 このコマンドは型チェック・テスト・静的ビルド・配信ファイルの検証後、ソースを`main`、`dist-pages`の内容と`.nojekyll`を`gh-pages`へpushし、Pagesの公開元を`gh-pages`のルートに設定・維持します。Settings → PagesのSourceは **Deploy from a branch** を使います。プロジェクトURLのサブディレクトリでも動く相対パスを使用しています。
 
-2026-11-10、カスタムActions workflowはアカウントのbilling lockにより開始できませんでしたが、生成済みファイルのブランチ公開で [予備公開先 wotagei-master-web](https://wo1f-rgb.github.io/wotagei-master-web/) のデプロイと公開アプリ上のブラウザテストが成功しました。元の公開先は設定更新済み・公開確認待ちです。カスタムworkflowは手動実行のみに変更しています。この経路はアカウント自体のbilling lockを解除するものではありません。確認結果と更新手順は [Pages公開の復旧記録](docs/pages-recovery.md) を参照してください。
+2026-11-10、カスタムActions workflowはアカウントのbilling lockにより開始できませんでしたが、生成済みファイルのブランチ公開で [元の公開URL](https://wo1f-rgb.github.io/wotagei-master/) と [予備公開URL](https://wo1f-rgb.github.io/wotagei-master-web/) のデプロイ・公開アプリ上のブラウザテストが成功しました。更新コマンドも元の公開先への実行で確認済みです。元URLのオリジンは変わらず、この復旧に伴う端末内の保存データ移行は不要です。カスタムworkflowは手動実行のみに変更しています。アカウント自体のbilling lockが解除されたかは未確認です。実行記録と検証範囲は [Pages公開の復旧記録](docs/pages-recovery.md) を参照してください。
 
 GitHubが静的ファイルの配信を担当するため、PCや自分のサーバーを常時起動する必要はありません。YouTube・曲検索・初回のアプリ読み込みにはネット接続が必要です。完全オフライン動作を保証するService Workerは未実装です。iPhoneではSafariの共有からホーム画面に追加できます。
 

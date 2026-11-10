@@ -4,18 +4,27 @@
 
 | 対象 | 状態 |
 | --- | --- |
-| 元のリポジトリ `Wo1F-rgb/wotagei-master` | `gh-pages`へのpush・ブランチ公開設定済み。元の公開URLの反映確認待ち |
+| [元の公開URL](https://wo1f-rgb.github.io/wotagei-master/) | 復旧済み。標準Pagesデプロイ・HTTP 200・公開アプリ上のブラウザテスト成功 |
 | 予備リポジトリ `Wo1F-rgb/wotagei-master-web` | 作成・ソースとビルド済みファイルのpush済み |
 | [予備公開URL](https://wo1f-rgb.github.io/wotagei-master-web/) | 標準Pagesデプロイ成功。公開アプリ上のブラウザテスト成功 |
 | アカウントのbilling lock | 解除は未確認。公開経路の変更と解除は別の問題 |
 
-カスタムActions workflowは「The job was not started because your account is locked due to a billing issue.」で開始できませんでした。予備リポジトリでは、ローカルで生成した静的ファイルと`.nojekyll`を`gh-pages`へ送ると、GitHub標準の`pages-build-deployment`が開始し、ビルド・デプロイとも成功しました。
+カスタムActions workflowは「The job was not started because your account is locked due to a billing issue.」で開始できませんでした。ローカルで生成した静的ファイルと`.nojekyll`を`gh-pages`へ送る方式では、予備・元の両リポジトリでGitHub標準の`pages-build-deployment`が成功しました。支払方法や契約などの金融設定は変更していません。
 
-- ソース：`323c9de`（`main`）
-- 公開用ファイル：`60640375db914c010b89cd5480c2aa95abd4d5a6`（`gh-pages`）
-- [予備リポジトリの標準Pages実行](https://github.com/Wo1F-rgb/wotagei-master-web/actions/runs/42836707398)：成功（デプロイを含む）
+元の公開先での確認記録：
 
-公開URLを対象に`tests/built-beat-frames.mjs`を実行し、MP4・JPEG・ZIPの出力、4拍の画素内容、正確なシーク、中止、4画面サイズのテストが成功しました。YouTube APIとXの情報取得はテスト内の代替応答を使っており、外部サービスとの実通信を保証する結果ではありません。
+- 公開アプリのソース：`5b61cd5792323e58ce2836850ece7d01089c032c`
+- 公開用ファイル：`1bf535e545aba8540c016a51430b09b1a2d72e96`（`gh-pages`）
+- [元リポジトリの標準Pages実行](https://github.com/Wo1F-rgb/wotagei-master/actions/runs/42838255889)：全工程成功
+- [公開中のrelease.json](https://wo1f-rgb.github.io/wotagei-master/release.json)：上記ソースcommitを確認
+- 公開HTML：HTTP 200、`index-ahgEbN3d.js`の配信を確認
+- `npm run publish:pages -- --repo Wo1F-rgb/wotagei-master`：終了コード0。型チェック、テスト280件（失敗・スキップ0）、ビルド、静的配信検証が成功
+
+予備公開先はソース`323c9de`、公開用commit `60640375db914c010b89cd5480c2aa95abd4d5a6`で、同じアプリ機能の公開を先に確認しました。[予備リポジトリの標準Pages実行](https://github.com/Wo1F-rgb/wotagei-master-web/actions/runs/42836707398)もデプロイを含め成功しています。予備の`main`にも更新コマンドと文書を反映済みです。
+
+両方の公開URLを対象に`tests/built-beat-frames.mjs`を実行し、MP4の読み込み、JPEG・ZIPの出力、4拍分の実JPEG画素、正確なシーク、出力前後の動画時刻の維持、中止、4画面サイズのテストが成功しました。YouTube APIとXの情報取得はテスト内の代替応答を使っており、外部サービスとの実通信を保証する結果ではありません。ブラウザ検証はWindows上のChromiumで行い、iPhone実機は未確認です。
+
+元の公開URLは引き続き使えます。URLのオリジンは変わらないため、この復旧に伴う端末内の保存データ移行は不要です。
 
 `.nojekyll`はJekyllによるビルドを省くためのファイルです。ブランチからの公開もGitHub Actionsのworkflowでデプロイされるため、「Actionsを一切使わない方式」ではありません。今回の標準workflowが開始できたことは実測結果であり、すべてのbilling lockで使える保証ではありません。[GitHub公式：公開元の設定](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
 
@@ -44,6 +53,8 @@ push後は、対象リポジトリのActionsで`pages-build-deployment`の成功
 Settings → Pages → Build and deploymentでは、Sourceを **Deploy from a branch**、Branchを **gh-pages / (root)** にします。既存のカスタムworkflow `.github/workflows/pages.yml` は手動実行のみで、ソースのpushでは起動しません。通常の更新は上記コマンドを使います。カスタムActions workflowへ公開を戻すと、billing lockが残る間は再び開始を拒否される可能性があります。
 
 GitHubが静的ファイルを配信するため、PCや自分のサーバーの常時起動は不要です。更新するときだけローカルでビルド・pushします。
+
+READMEやこの復旧記録だけを更新する場合は、ソースのcommit・pushだけで構いません。公開アプリを再ビルドしない限り、`release.json`は直近に公開したアプリのソースcommitを示します。
 
 ## 再び課金エラーになった場合
 
