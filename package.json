@@ -9,6 +9,7 @@
     "dev": "vite --config vite.pages.config.ts",
     "build": "vite build --config vite.pages.config.ts",
     "build:pages": "vite build --config vite.pages.config.ts",
+    "publish:pages": "node scripts/publish-pages-local.mjs",
     "test": "node --test tests/*.test.mjs",
     "check": "tsc --noEmit",
     "preview": "vite preview --config vite.pages.config.ts"

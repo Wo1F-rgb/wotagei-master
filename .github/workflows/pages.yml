@@ -1,7 +1,6 @@
 name: Publish GitHub Pages
 on:
-  push:
-    branches: [main]
+  # Automatic publication uses locally built gh-pages while custom jobs are billing-locked.
   workflow_dispatch:
 permissions:
   contents: read

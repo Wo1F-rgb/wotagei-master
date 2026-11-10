@@ -193,7 +193,15 @@ Twitter/Xの公開投稿は [FxEmbed API](https://docs.fxembed.com/api/twitter/o
 
 ## GitHub Pagesへの公開
 
-このリポジトリの Settings → Pages → Build and deployment → Source を **GitHub Actions** に設定します。mainへのpushでテストと静的ビルドを実行し、`dist-pages`を公開します。プロジェクトURLのサブディレクトリでも動く相対パスを使用しています。
+公開更新はローカルで検証・ビルドしてから、生成済みファイルを`gh-pages`へ送る方式を使います。Node.js 24と、対象リポジトリに書き込めるGitHub CLIの認証を用意し、依存関係を`npm ci`で導入して実行します。
+
+```sh
+npm run publish:pages -- --repo Wo1F-rgb/wotagei-master
+```
+
+このコマンドは型チェック・テスト・静的ビルド・配信ファイルの検証後、ソースを`main`、`dist-pages`の内容と`.nojekyll`を`gh-pages`へpushし、Pagesの公開元を`gh-pages`のルートに設定・維持します。Settings → PagesのSourceは **Deploy from a branch** を使います。プロジェクトURLのサブディレクトリでも動く相対パスを使用しています。
+
+2026-11-10、カスタムActions workflowはアカウントのbilling lockにより開始できませんでしたが、生成済みファイルのブランチ公開で [予備公開先 wotagei-master-web](https://wo1f-rgb.github.io/wotagei-master-web/) のデプロイと公開アプリ上のブラウザテストが成功しました。元の公開先は設定更新済み・公開確認待ちです。カスタムworkflowは手動実行のみに変更しています。この経路はアカウント自体のbilling lockを解除するものではありません。確認結果と更新手順は [Pages公開の復旧記録](docs/pages-recovery.md) を参照してください。
 
 GitHubが静的ファイルの配信を担当するため、PCや自分のサーバーを常時起動する必要はありません。YouTube・曲検索・初回のアプリ読み込みにはネット接続が必要です。完全オフライン動作を保証するService Workerは未実装です。iPhoneではSafariの共有からホーム画面に追加できます。
 
