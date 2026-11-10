@@ -1,0 +1,82 @@
+{
+  "modelType": "beat-this-small0",
+  "sampleRate": 22050,
+  "mono": true,
+  "downmix": "mean",
+  "resampler": "browser OfflineAudioContext (soxr used only in Python reference verification)",
+  "nFft": 1024,
+  "hopLength": 441,
+  "winLength": 1024,
+  "melBins": 128,
+  "melScale": "slaney",
+  "fMin": 30,
+  "fMax": 11000,
+  "window": "periodic-hann",
+  "center": true,
+  "padMode": "reflect",
+  "onesided": true,
+  "normalized": "frame_length",
+  "power": 1,
+  "logMultiplier": 1000,
+  "fps": 50,
+  "frameDuration": 0.02,
+  "chunkSize": 1500,
+  "borderSize": 6,
+  "overlapMode": "keep_first",
+  "peakKernel": 7,
+  "peakThreshold": 0,
+  "deduplicateWidth": 1,
+  "melFilterbank": {
+    "file": "mel-filterbank.bin",
+    "shape": [
+      513,
+      128
+    ],
+    "dtype": "float32",
+    "endianness": "little",
+    "layout": "row-major",
+    "sha256": "1ee975d96f44ccf2c3bfe37825c1c1f0b089f5703c7a12a84b1f0a3bce004533"
+  },
+  "model": {
+    "file": "beat-this-small0.onnx",
+    "sha256": "2c76a2b8b49c0fa9a47c5c37d9e2b486077ca0896a40b629352235768c6a8e3d",
+    "input": {
+      "name": "spect",
+      "shape": [
+        1,
+        "frames",
+        128
+      ],
+      "dtype": "float32"
+    },
+    "outputs": [
+      {
+        "name": "beat",
+        "shape": [
+          1,
+          "frames"
+        ],
+        "dtype": "float32"
+      },
+      {
+        "name": "downbeat",
+        "shape": [
+          1,
+          "frames"
+        ],
+        "dtype": "float32"
+      }
+    ]
+  },
+  "source": {
+    "repository": "https://github.com/CPJKU/beat_this",
+    "package": "beat-this==1.1.0",
+    "paper": "Foscarin, Schlueter, Widmer, ISMIR 2024",
+    "license": "MIT",
+    "revision": "b95c8ab0c58c2d9fcfd40508ae8dffbc05ac4f5c",
+    "checkpoint": "small0",
+    "checkpointSha256": "6074be2c4d490c5f6101fcc374a1ec72ae93456e23bb6019783b849f5dc7d47b",
+    "exporter": "https://github.com/musetric/musetric-toolkit/tree/1eeb5baf6ce796419dfcf500ae13b3247d8b6459/scripts/onnx/beat_this",
+    "export": "DynamicPartialFTTransformer then Split to Slice conversion, ONNX opset17"
+  }
+}

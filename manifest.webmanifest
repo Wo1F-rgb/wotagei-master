@@ -1,0 +1,1 @@
+{"name": "ヲタ芸マスター", "short_name": "ヲタ芸マスター", "start_url": "./", "display": "standalone", "background_color": "#0c0e12", "theme_color": "#0c0e12", "lang": "ja", "icons": [{"src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}], "scope": "./"}
