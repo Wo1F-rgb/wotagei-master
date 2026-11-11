@@ -26,6 +26,17 @@ test('external audio identity and bytes are retained with BPM-only source semant
  const restored=await createRhythmHistoryStore(factory).load('youtube:123');
  assert.equal(restored.source,'audio');assert.equal(restored.audio.name,audio.name);assert.equal(restored.audio.lastModified,789);assert.equal(await restored.audio.blob.text(),'music bytes');
 });
+
+test('accepting an average grid survives reopening without changing the original confidence or legacy rows',async()=>{
+ const factory=new IDBFactory(),store=createRhythmHistoryStore(factory),value=entry('average-video',{useAverage:true});
+ value.result.grid.variable=true;
+ assert.equal(await store.save(value),true);
+ const restored=await createRhythmHistoryStore(factory).load(value.key);
+ assert.equal(restored.useAverage,true);assert.equal(restored.result.grid.variable,true);
+ assert.deepEqual(restored.result.beats,value.result.beats);
+ await store.save(entry('legacy-video'));assert.equal((await createRhythmHistoryStore(factory).load('legacy-video')).useAverage,undefined);
+ for(const useAverage of ['true',1,null,{}])assert.equal(validRhythmHistory({...restored,useAverage}),false);
+});
 test('new drafts win racing saves and reopened history retains the final touch',async()=>{
  const factory=new IDBFactory(),store=createRhythmHistoryStore(factory);
  await Promise.all(Array.from({length:12},(_,i)=>store.save(entry('same-video',{originText:String(.25+i*.001)}))));

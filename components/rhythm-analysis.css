@@ -7,3 +7,4 @@
 .rhythm-analysis__playhead{stroke:#7eb6f4}.rhythm-analysis__origin line{stroke:#ff6f87;stroke-width:3;vector-effect:non-scaling-stroke}.rhythm-analysis__origin text{fill:#ff91a3;font:bold 23px Arial,sans-serif;stroke:none}.tempo-methods>.tempo-body[hidden]{display:none}
 
 .tempo-methods>[data-slot=tabs-list]{position:sticky;top:0;z-index:6;background:#202a39}.rhythm-analysis__result{scroll-margin-top:38px}
+.rhythm-analysis__average{display:flex;align-items:center;justify-content:space-between;gap:6px}.rhythm-analysis__average>span{min-width:0;font-size:11px}.rhythm-analysis__average .button{flex-shrink:0;min-height:36px;padding:5px 7px;font-size:12px}.rhythm-analysis__average.selected{border-color:#cdfa6955;background:#cdfa6910;color:#c5d9ad}.rhythm-analysis__average .chosen{border-color:#cdfa69;background:#cdfa69;color:#17220a}

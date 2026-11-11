@@ -8,6 +8,8 @@ export type RhythmHistoryEntry = {
   bpmText: string;
   originText: string;
   position: number;
+  /** Explicitly accept the fitted constant grid despite a variable-beat warning. */
+  useAverage?: boolean;
   /** Settings that were applied to the production video when this draft was saved. */
   baseline?: {bpm: number; origin: number};
 };
@@ -24,6 +26,7 @@ export function validRhythmHistory(value: unknown): value is StoredEntry {
     && typeof v.bpmText === 'string' && v.bpmText.length <= 128 && typeof v.originText === 'string' && v.originText.length <= 128
     && finite(v.position) && v.position >= 0 && Boolean(r) && finite(r.duration) && r.duration >= 8 && r.duration <= 600
     && v.position <= r.duration && typeof r.engine === 'string'
+    && (v.useAverage === undefined || typeof v.useAverage === 'boolean')
     && numbers(r.beats, 12000) && numbers(r.downbeats, 12000) && numbers(r.waveform, 60001)
     && (g === null || Boolean(g && finite(g.bpm) && g.bpm >= 40 && g.bpm <= 300 && finite(g.origin) && g.origin >= 0
       && finite(g.errorMs) && finite(g.driftMs) && finite(g.coverage) && finite(g.beatCount) && typeof g.variable === 'boolean'))

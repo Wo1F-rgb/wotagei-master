@@ -150,6 +150,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioInputFile, setAudioInputFile] = useState<File | null>(null);
   const [result, setResult] = useState<RhythmAnalysisResult | null>(initial?.result ?? null);
+  const [useAverage, setUseAverage] = useState(initial?.useAverage === true);
   const [bpmText, setBpmText] = useState(initial ? (initialValues.bpmChanged ? String(savedBpm) : initial.bpmText) : '');
   const [originText, setOriginText] = useState(initial ? (initialValues.originChanged ? String(savedOrigin) : initial.originText) : '');
   const [position, setPosition] = useState(initial?.position ?? 0);
@@ -163,6 +164,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   const historyDraft = useRef<RhythmHistoryEntry | null>(initial);
   const productionBaseline = useRef<ProductionBaseline>({bpm:initialValues.bpm,origin:initialValues.origin});
   const historyWrite = useRef(0);
+  const draftGeneration = useRef(0);
 
   const savedValues = useRef({bpm:savedBpm,origin:savedOrigin});
   const originDrag = useRef<{pointer:number;left:number;width:number;start:number;span:number;value:number}|null>(null);
@@ -184,7 +186,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   const pauseRef = useRef(pause);
   const activeFile = source === 'video' ? file : audioFile;
   if (historyReady && result && mediaKey) historyDraft.current = {
-    key: mediaKey, source, result, bpmText, originText, position: clamp(position, 0, result.duration),
+    key: mediaKey, source, result, bpmText, originText, position: clamp(position, 0, result.duration), useAverage,
     audio: source === 'audio' && audioFile ? {blob: audioFile, name: audioFile.name, lastModified: audioFile.lastModified} : null,
     baseline: {...productionBaseline.current},
   };
@@ -244,10 +246,12 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   }, [stopPreview]);
 
   const resetAnalysis = useCallback(() => {
+    draftGeneration.current++;
     controllerRef.current?.abort();
     controllerRef.current = null;
     setBusy(false);
     setResult(null);
+    setUseAverage(false);
     setBpmText('');
     setOriginText('');
     setMessage('');
@@ -262,19 +266,20 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   useEffect(() => {
     if (initial || !mediaKey) return;
     let current = true;
+    const generation = draftGeneration.current;
     void rhythmHistory().load(mediaKey).then(entry => {
-      if (!current) return;
+      if (!current || generation !== draftGeneration.current) return;
       if (entry) {
         const values=historyBaseline(entry,savedBpm,savedOrigin,savedKnown);
         productionBaseline.current={bpm:values.bpm,origin:values.origin};
         setSource(entry.source); setAudioFile(restoredAudio(entry));
-        setResult(entry.result); setBpmText(values.bpmChanged?String(savedBpm):entry.bpmText); setOriginText(values.originChanged?String(savedOrigin):entry.originText);
+        setResult(entry.result); setUseAverage(entry.useAverage === true); setBpmText(values.bpmChanged?String(savedBpm):entry.bpmText); setOriginText(values.originChanged?String(savedOrigin):entry.originText);
         resumePosition.current = entry.position; setPosition(entry.position); setHasStarted(true);
       }
       setHistoryError('');
       setHistoryReady(true);
     }).catch(() => {
-      if (current) { setHistoryError('解析履歴を読み出せません'); setHistoryReady(true); }
+      if (current && generation === draftGeneration.current) { setHistoryError('解析履歴を読み出せません'); setHistoryReady(true); }
     });
     return () => { current = false; };
   }, [initial, mediaKey, savedBpm, savedOrigin, savedKnown]);
@@ -287,7 +292,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
       if (!persistent) { setHistoryError(''); return; }
       setHistoryError(saved ? '' : '解析履歴を保存できません');
     });
-  }, [historyReady, result, bpmText, originText, source, audioFile, mediaKey]);
+  }, [historyReady, result, bpmText, originText, source, audioFile, mediaKey, useAverage]);
 
   useEffect(() => {
     // Flush the current preview position too, including navigation immediately
@@ -380,7 +385,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   }, [playing, previewBpm, previewOrigin, stopClicks]);
 
   const automaticApplyReady = Boolean(
-    (file||remote) && result && hasBeats && gridIsUsable(grid) && validDraft && !grid?.variable,
+    (file||remote) && result && hasBeats && gridIsUsable(grid) && validDraft && (!grid?.variable || useAverage),
   );
   const analysisInput = activeFile;
 
@@ -585,7 +590,9 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
     pauseRef.current();
     stopPreview(true);
     setBusy(true);
+    draftGeneration.current++;
     setResult(null);
+    setUseAverage(false);
     setBpmText('');
     setOriginText('');
     setError('');
@@ -640,7 +647,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
   };
 
   const fitOrigin = () => {
-    if(!validDraft||!grid||grid.variable)return;
+    if(!validDraft||!gridIsUsable(grid)||!grid||(grid.variable&&!useAverage))return;
     const fitted=fitBeatOrigin(previewOrigin,previewBpm,grid.origin,duration);
     if(!fitted)return;
     pauseRef.current();stopPreview();setError('');setOriginText(String(fitted.time));seek(fitted.time);
@@ -650,7 +657,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
     if(busy||!historyReady){setError('解析と履歴の読み込みが終わってから保存してください。');return false;}
     if(!result)return true;
     const bpm=Number(bpmText),origin=Number(originText);
-    if(!automaticApplyReady){setError('BPM・1拍目の位置・解析結果を確認してください。安定した拍は「手動」で設定してください。');return false;}
+    if(!automaticApplyReady){setError(validDraft&&grid?.variable&&!useAverage?'平均の拍を使うか、手動で設定してください。':'BPM・1拍目の位置・解析結果を確認してください。');return false;}
     pauseRef.current();stopPreview(true);
     const saved=source==='video'&&file?apply(bpm,origin):applyBpmOnly(bpm);
     if(!saved){setError('設定を保存できませんでした。動画の読み込みと端末の保存領域を確認して、もう一度お試しください。');return false;}
@@ -827,7 +834,7 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
           </div>
           <div className="rhythm-analysis__preview-row">
             <button type="button" className="button mini" disabled={!validDraft} onClick={()=>seek(previewOrigin)}>1拍目へ</button>
-            <button type="button" className="button mini" disabled={!validDraft||!grid||grid.variable} onClick={fitOrigin}>フィット</button>
+            <button type="button" className="button mini" disabled={!validDraft||!gridIsUsable(grid)||(grid?.variable&&!useAverage)} onClick={fitOrigin}>フィット</button>
             <button type="button" className="button mini primary" disabled={!audioUrl} onClick={() => void togglePreview()}>
               {playing ? '停止' : '拍音で再生'}
             </button>
@@ -852,9 +859,10 @@ export function RhythmAnalysis({ ref, active, savedBpm, savedOrigin, savedKnown,
           {resultGrid ? (
             <>
               {resultGrid.variable && (
-                <p className="rhythm-analysis__warning" role="alert">
-                  拍間隔が一定ではありません。自動適用を停止しています。手動で設定してください。
-                </p>
+                <div className={`rhythm-analysis__warning rhythm-analysis__average ${useAverage?'selected':''}`} role="status">
+                  <span>{useAverage?'途中でズレる場合があります':'拍にばらつきがあります'}</span>
+                  <button type="button" className={`button mini ${useAverage?'chosen':''}`} aria-label="平均の拍を使う" aria-pressed={useAverage} disabled={busy||!historyReady||!hasBeats||!validDraft||!gridIsUsable(resultGrid)} onClick={()=>{draftGeneration.current++;setUseAverage(v=>!v);setError('');}}>{useAverage?'平均の拍を使用中':'平均の拍を使う'}</button>
+                </div>
               )}
               {hasBeats && (
                 <div className="rhythm-analysis__fields">

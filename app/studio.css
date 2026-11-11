@@ -476,3 +476,8 @@
 @media(orientation:landscape){.configuring .deck.selected:has(.video-config[data-step=frames]){grid-template-rows:30px minmax(0,1fr)}.studio:not(.editing):not(.aligning) .practice-dock>.transport{grid-template-columns:repeat(5,minmax(0,1fr))}}
 
 .beat-frame-save{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 7px}.beat-frame-save>strong,.beat-frame-save>small{grid-column:1/-1}.beat-frame-save>.primary{grid-column:1/-1}.beat-frame-save small{font-size:10px}.beat-frame-reset{border:0;background:none;color:#b4c5dc;text-decoration:underline;font-size:11px;padding:4px}.beat-frame-save>.button{font-size:12px;min-height:34px}
+/* Frame orientation applies to decoded JPEGs, including the preview and every save path. */
+.beat-frame-actions>.beat-frame-mirror{padding-inline:7px;white-space:nowrap;font-size:12px}.beat-frame-mirror[aria-pressed=true]{color:var(--primary);border-color:var(--primary)}
+.beat-frame-save-head{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:6px}.beat-frame-save-head>strong{font-size:11px}.beat-frame-save-head>.beat-frame-mirror{min-height:28px;padding:3px 5px;font-size:11px;gap:3px;white-space:nowrap}
+.beat-frame-save{gap:4px 7px;padding-top:6px}.beat-frame-save small{line-height:1.2}.beat-frame-save>.button{padding-block:5px}
+@media(orientation:portrait) and (max-width:370px){.beat-frame-actions{gap:5px}.beat-frame-actions>.button{font-size:11px;padding-inline:5px;gap:3px}.beat-frame-actions>.beat-frame-mirror{font-size:11px;padding-inline:5px}}
